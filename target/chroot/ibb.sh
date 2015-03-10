@@ -82,6 +82,8 @@ setup_system () {
 			echo "ttyGS0" >> /etc/securetty
 		fi
 	fi
+
+    cp /usr/share/zoneinfo/Europe/Berlin /etc/localtime
 }
 
 install_pip3_pkgs () {
@@ -113,160 +115,24 @@ install_eibd () {
         rm ${deb}
     done    
 
-    echo "Installing eibd autostart script"
-    mkdir -p /etc/init.d
-cat > /etc/init.d/eibd <<'EOF'
-#!/bin/sh
-### BEGIN INIT INFO
-# Provides:          eibd
-# Required-Start:    $local_fs $remote_fs $network
-# Required-Stop:     $local_fs $remote_fs
-# Default-Start:     2 3 4 5
-# Default-Stop:      0 1 6
-# Short-Description: eibd initscript
-# Description:       based on init-script from knx-user-forum.de and setup-eibd.sh from KNXlive-project
-#                    Pending: check tpuarts, check KNXnet/IP-Response
-### END INIT INFO
+    echo "Installing eibd systemd service"
+    mkdir -p /etc/systemd/system
+cat > /etc/systemd/system/eibd.service <<'EOF'
+[Unit]
+Description=eibd KNX daemon
+After=network.target network-online.target connman.service avahi-daemon.service
 
-PATH=/sbin:/usr/sbin:/bin:/usr/bin
-DESC="EIB/KNX daemon"
-NAME=eibd
-DAEMON=/usr/bin/$NAME
-PIDFILE=/var/run/$NAME.pid
-DAEMON_ARGS="-e 1.1.0 -c -S -D -i -T --tpuarts-disch-reset --tpuarts-ack-all-group -d -u --pid-file=$PIDFILE tpuarts:/dev/ttyO2"
-SCRIPTNAME=/etc/init.d/$NAME
+[Service]
+ExecStart=/usr/bin/eibd --eibaddr 1.1.0 --GroupCache --Server --Tunnelling --Discovery --tpuarts-ack-all-group --listen-tcp --listen-local tpuarts:/dev/ttyS2
+Restart=on-failure
+RestartSec=5
+User=smarthome
+Group=smarthome
 
-# Exit if the package is not installed
-[ -x "$DAEMON" ] || exit 0
-
-# Load the VERBOSE setting and other rcS variables
-. /lib/init/vars.sh
-
-# Define LSB log_* functions.
-# Depend on lsb-base (>= 3.0-6) to ensure that this file is present.
-. /lib/lsb/init-functions
-
-#
-# Function that starts the daemon/service
-#
-do_start()
-{
-	#echo "DEBUG args: $DAEMON_ARGS eibdi: $EIBD_I eibdt: $EIBD_T eibdr: $EIBD_R backend: $EIBD_BACKEND url: $EIBD_URL port: $EIBD_PORT addrtab: $EIBD_BCUADDRTAB"
-	# Return
-        #   0 if daemon has been started
-        #   1 if daemon was already running
-        #   2 if daemon could not be started
-        start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON --test > /dev/null \
-                || return 1
-	echo "*** Starting $DESC: $NAME using $EIBD_URL" 
-        start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON -- \
-                $DAEMON_ARGS \
-                || return 2
-        # Add code here, if necessary, that waits for the process to be ready
-        # to handle requests from services started subsequently which depend
-        # on this one.  As a last resort, sleep for some time.
-	sleep 1
-	chmod a+rw /tmp/eib
-}
-#
-# Function that stops the daemon/service
-#
-do_stop()
-{
-        # Return
-        #   0 if daemon has been stopped
-        #   1 if daemon was already stopped
-        #   2 if daemon could not be stopped
-        #   other if a failure occurred
-        start-stop-daemon --stop --quiet --retry=TERM/30/KILL/5 --pidfile $PIDFILE --name $NAME
-        RETVAL="$?"
-        [ "$RETVAL" = 2 ] && return 2
-        # Wait for children to finish too if this is a daemon that forks
-        # and if the daemon is only ever run from this initscript.
-        # If the above conditions are not satisfied then add some other code
-        # that waits for the process to drop all resources that could be
-        # needed by services started subsequently.  A last resort is to
-        # sleep for some time.
-        start-stop-daemon --stop --quiet --oknodo --retry=0/30/KILL/5 --exec $DAEMON
-	[ "$?" = 2 ] && return 2
-        # Many daemons don't delete their pidfiles when they exit.
-        rm -f $PIDFILE
-        return "$RETVAL"
-}
-
-#
-# Function that sends a SIGHUP to the daemon/service
-#
-do_reload() {
-        #
-        # If the daemon can reload its configuration without
-        # restarting (for example, when it is sent a SIGHUP),
-        # then implement that here.
-        #
-        start-stop-daemon --stop --signal 1 --quiet --pidfile $PIDFILE --name $NAME
-        return 0
-}
-
-case "$1" in
-  start)
-        [ "$VERBOSE" != no ] && log_daemon_msg "Starting $DESC using $EIBD_URL" "$NAME"
-        do_start
-        case "$?" in
-                0|1) log_end_msg 0 ;;
-                2) [ log_end_msg 1 ;;
-        esac
-        ;;
-  stop)
-        [ "$VERBOSE" != no ] && log_daemon_msg "Stopping $DESC" "$NAME"
-	echo "*** Stopping $DESC" "$NAME"
-        do_stop
-        case "$?" in
-                0|1) log_end_msg 0 ;;
-                2) [ log_end_msg 1 ;;
-        esac
-        ;;
-  #reload|force-reload)
-        #
-        # If do_reload() is not implemented then leave this commented out
-        # and leave 'force-reload' as an alias for 'restart'.
-        #
-        #log_daemon_msg "Reloading $DESC" "$NAME"
-        #do_reload
-        #log_end_msg $?
-        #;;
-  restart|force-reload)
-        #
-        # If the "reload" option is implemented then remove the
-        # 'force-reload' alias
-        #
-        echo "*** Restarting $DESC" "$NAME"
-        do_stop
-        case "$?" in
-          0|1)
-		sleep 2
-                do_start
-                case "$?" in
-                        0) log_end_msg 0 ;;
-                        1) log_end_msg 1 ;; # Old process is still running
-                        *) log_end_msg 1 ;; # Failed to start
-                esac
-                ;;
-          *)
-
-                # Failed to stop
-                log_end_msg 1
-                ;;
-        esac
-        ;;
-  *)
-        #echo "Usage: $SCRIPTNAME {start|stop|restart|reload|force-reload}" >&2
-        echo "Usage: $SCRIPTNAME {start|stop|restart|force-reload}" >&2
-        exit 3
-        ;;
-esac
+[Install]
+WantedBy=multi-user.target
 EOF
-    chmod +x /etc/init.d/eibd
-    update-rc.d eibd defaults
+    systemctl enable eibd.service
 }
 
 install_smarthome_py_develop () {
@@ -277,18 +143,16 @@ install_smarthome_py_develop () {
     #cd /usr/local/smarthome  
     #git pull
 
-	#git_repo="http://github.com/mknx/smarthome.git"
-	#git_branch="develop"
-	#git_target_dir="/usr/local/smarthome"
-	#git_clone_branch
+	git_repo="http://github.com/mknx/smarthome.git"
+	git_branch="develop"
+	git_target_dir="/usr/local/smarthome"
+	git_clone_branch
 
-    wget https://github.com/mknx/smarthome/archive/develop.zip
-    unzip develop.zip -d /usr/local
-    mv /usr/local/smarthome-develop /usr/local/smarthome
-    
+    #wget https://github.com/mknx/smarthome/archive/develop.zip
+    #unzip develop.zip -d /usr/local
+    #mv /usr/local/smarthome-develop /usr/local/smarthome 
 
     echo "Setting ownership for smarthome.py"
-    #usermod -G smarthome -a smarthome
     chown -R smarthome:smarthome /usr/local/smarthome
 
     echo "Configuring smarthome.py"
@@ -310,9 +174,9 @@ cat >plugin.conf <<EOF
     class_path = plugins.knx
     host = 127.0.0.1
     port = 6720
-#   send_time = 600 # update date/time every 600 seconds, default none
-#   time_ga = 1/1/1 # default none
-#   date_ga = 1/1/2 # default none
+#    send_time = 600 # update date/time every 600 seconds, default none
+#    time_ga = 1/1/1 # default none
+#    date_ga = 1/1/2 # default none
     busmonitor = yes
 [visu]
     class_name = WebSocket
@@ -330,7 +194,15 @@ cat >plugin.conf <<EOF
 [enocean]
     class_name = EnOcean
     class_path = plugins.enocean
-    serialport = /dev/ttyO4
+    serialport = /dev/ttyS3
+[dlms]
+#    class_name = DLMS
+#    class_path = plugins.dlms
+#    serialport = /dev/ttyS1
+#    update_cycle = 20
+#    use_checksum = True
+#    reset_baudrate = False
+#    no_waiting = True
 [cli]
     class_name = CLI
     class_path = plugins.cli
@@ -338,132 +210,98 @@ cat >plugin.conf <<EOF
     update = True
 EOF
 
-    echo "Installing smarthome.py autostart script"
-    mkdir -p /etc/init.d
-cat > /etc/init.d/smarthome <<'EOF'
-#!/bin/sh
-### BEGIN INIT INFO
-# Provides: smarthome
-# Required-Start: $syslog $network
-# Required-Stop: $syslog $network
-# Should-Start: eibd owserver
-# Should-Stop: eibd owserver
-# Default-Start: 2 3 4 5
-# Default-Stop: 0 1 6
-# Short-Description: Start SmartHome.py
-### END INIT INFO
+    echo "Installing smarthome.py systemd service"
+    mkdir -p /etc/systemd/system
+cat > /etc/systemd/system/smarthome.service <<'EOF'
+[Unit]
+Description=SmartHome.py
+After=eibd.service
+After=owserver.service
 
-DESC="SmartHome.py"
-NAME=smarthome.py
-SH_ARGS=""
-SH_UID='smarthome'
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/smarthome/bin/smarthome.py --foreground
+User=smarthome
+Group=smarthome
 
-PATH=/sbin:/usr/sbin:/bin:/usr/bin:/usr/local/bin
-DAEMON=/usr/local/smarthome/bin/$NAME
-PIDFILE=/usr/local/smarthome/var/run/smarthome.pid
-SCRIPTNAME=/etc/init.d/$NAME
-
-[ -x "$DAEMON" ] || exit 0
-
-[ -r /etc/default/$NAME ] && . /etc/default/$NAME
-
-DAEMON_ARGS="$SH_ARGS"
-
-do_start()
-{
-    #touch $PIDFILE
-    #chown $SH_UID $PIDFILE
-    #start-stop-daemon --start --quiet --chuid $SH_UID --pidfile $PIDFILE --exec $DAEMON --test > /dev/null || return 1
-    #start-stop-daemon --start --quiet --chuid $SH_UID --pidfile $PIDFILE --exec $DAEMON -- $DAEMON_ARGS || return 2
-    sudo -u $SH_UID $DAEMON --start
-}
-
-do_stop()
-{
-    sudo -u $SH_UID $DAEMON --stop
-    #start-stop-daemon --stop --quiet --retry=TERM/30/KILL/5 --pidfile $PIDFILE --name $NAME
-    #RETVAL="$?"
-    #[ "$RETVAL" = 2 ] && return 2
-    #start-stop-daemon --stop --quiet --oknodo --retry=0/30/KILL/5 --exec $DAEMON
-    #[ "$?" = 2 ] && return 2
-    #rm -f $PIDFILE
-    #return "$RETVAL"
-}
-
-do_reload() {
-    start-stop-daemon --stop --signal 1 --quiet --pidfile $PIDFILE --name $NAME
-    return 0
-}
-
-case "$1" in
-    start)
-        do_start
-        ;;
-    stop)
-        do_stop
-        ;;
-    #reload|force-reload)
-        #echo "Reloading $DESC" "$NAME"
-        #do_reload
-        #log_end_msg $?
-        #;;
-    restart)
-        #
-        # If the "reload" option is implemented then remove the
-        # 'force-reload' alias
-        #
-        echo "Restarting $DESC" "$NAME"
-        do_stop
-        sleep 1
-        do_start
-        ;;
-    *)
-        echo "Usage: $SCRIPTNAME {start|stop|restart}" >&2
-        exit 3
-        ;;
-esac
+[Install]
+WantedBy=multi-user.target
 EOF
-    chmod +x /etc/init.d/smarthome
-    update-rc.d smarthome defaults
+    systemctl enable smarthome.service
 }
 
-install_smartvisu_release_2_7 () {
-    echo "Installing smartvisu release 2.7"
+install_smartvisu () {
     mkdir -p /var/www/html
     cd /var/www/html
     rm -f index.html || true
+
+	svn checkout http://smartvisu.googlecode.com/svn/trunk/ smartVISU
+
+    #wget https://github.com/mknx/smarthome/archive/develop.zip
+    #unzip develop.zip -d /usr/local
+    #mv /usr/local/smarthome-develop /usr/local/smarthome 
+
+    chown -R smarthome:smarthome /usr/local/smarthome
+
+    echo "Installing smartvisu release 2.7"
     wget http://smartvisu.de/download/smartVISU_2.7.zip
     unzip smartVISU_2.7.zip
     rm smartVISU_2.7.zip
+
+    echo "Setting ownership for smartVISU"
     chown -R www-data:www-data smartVISU
     chmod -R 775 smartVISU
+
+    echo "Setting ownership for smartVISU smarthome pages"
     cd smartVISU/pages/
     mkdir smarthome
     chown -R smarthome:smarthome smarthome
 }
 
-install_owfs_config_file () {
-cat > /etc/owfs.conf <<'EOF'
-######################## SOURCES ########################
-#
-# With this setup, any client (but owserver) uses owserver on the
-# local machine...
-! server: server = localhost:4304
-#
-# ...and owserver uses the real hardware, by default fake devices
-# This part must be changed on real installation
-server: i2c = dev/i2c-3:0
-server: i2c = dev/i2c-4:0
-server: i2c = dev/i2c-5:0
-server: i2c = dev/i2c-6:0
-####################### OWHTTPD #########################
+install_owfs_systemd_services () {
+    echo "Removing owserver init.d script"
+    update-rc.d owserver remove
+    rm /etc/init.d/owserver
+    echo "Removing owhttpd init.d script"
+    update-rc.d owhttpd remove
+    rm /etc/init.d/owhttpd
 
-http: port = 2121
+    echo "Installing owserver systemd service"
+    mkdir -p /etc/systemd/system
+cat > /etc/systemd/system/owserver.service <<'EOF'
+[Unit]
+Description=Backend server for 1-wire control
+Documentation=man:owserver(1)
 
-####################### OWSERVER ########################
+[Service]
+ExecStart=/usr/bin/owserver --foreground --i2c=/dev/i2c-3 --i2c=/dev/i2c-4 --i2c=/dev/i2c-5 --i2c=/dev/i2c-6 --port=0.0.0.0:4304
+Restart=on-failure
+#User=ow
+#Group=ow
 
-server: port = 0.0.0.0:4304
+[Install]
+WantedBy=multi-user.target
 EOF
+    systemctl enable owserver.service
+
+    echo "Installing owhttpd systemd service"
+    mkdir -p /etc/systemd/system
+cat > /etc/systemd/system/owhttpd.service <<'EOF'
+[Unit]
+Description=Tiny webserver for 1-wire control
+Documentation=man:owhttpd(1)
+Requires=owserver.service
+After=owserver.service
+After=avahi-daemon.service
+
+[Service]
+ExecStart=/usr/bin/owhttpd --foreground --server=127.0.0.1:4304 --port=2121
+#User=ow
+#Group=ow
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl enable owhttpd.service
 }
 
 unsecure_root () {
@@ -492,11 +330,9 @@ install_pip3_pkgs
 
 install_smarthome_py_develop
 
-install_smartvisu_release_2_7
+install_smartvisu
 
-install_owfs_config_file
-
-cp /usr/share/zoneinfo/Europe/Berlin /etc/localtime
+install_owfs_systemd_services
 
 #unsecure_root
 
