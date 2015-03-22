@@ -137,26 +137,22 @@ EOF
 
 install_smarthome_py_develop () {
     echo "Cloning smarthome.py git repository (branch: develop)"
-    #mkdir -p /usr/local
-    #cd /usr/local
-    #git clone git://github.com/mknx/smarthome.git --branch develop
-    #cd /usr/local/smarthome  
-    #git pull
-
+    mkdir -p /usr/local
+    cd /usr/local
 	git_repo="http://github.com/mknx/smarthome.git"
 	git_branch="develop"
-	git_target_dir="/usr/local/smarthome"
+	git_target_dir="smarthome"
 	git_clone_branch
 
     #wget https://github.com/mknx/smarthome/archive/develop.zip
-    #unzip develop.zip -d /usr/local
-    #mv /usr/local/smarthome-develop /usr/local/smarthome 
+    #unzip develop.zip -d .
+    #mv smarthome-develop smarthome 
 
     echo "Setting ownership for smarthome.py"
-    chown -R smarthome:smarthome /usr/local/smarthome
+    chown -R smarthome:smarthome smarthome
 
     echo "Configuring smarthome.py"
-    cd /usr/local/smarthome/etc
+    cd smarthome/etc
     touch logic.conf
 cat >smarthome.conf <<EOF
 # smarthome.conf
@@ -240,12 +236,12 @@ install_smartvisu () {
     #unzip develop.zip -d /usr/local
     #mv /usr/local/smarthome-develop /usr/local/smarthome 
 
-    chown -R smarthome:smarthome /usr/local/smarthome
+#    chown -R smarthome:smarthome /usr/local/smarthome
 
-    echo "Installing smartvisu release 2.7"
-    wget http://smartvisu.de/download/smartVISU_2.7.zip
-    unzip smartVISU_2.7.zip
-    rm smartVISU_2.7.zip
+#    echo "Installing smartvisu release 2.7"
+#    wget http://smartvisu.de/download/smartVISU_2.7.zip
+#    unzip smartVISU_2.7.zip
+#    rm smartVISU_2.7.zip
 
     echo "Setting ownership for smartVISU"
     chown -R www-data:www-data smartVISU
