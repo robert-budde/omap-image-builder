@@ -190,8 +190,8 @@ cat >plugin.conf <<EOF
 [enocean]
     class_name = EnOcean
     class_path = plugins.enocean
-    serialport = /dev/ttyS3
-[dlms]
+    serialport = /dev/ttyS4
+#[dlms]
 #    class_name = DLMS
 #    class_path = plugins.dlms
 #    serialport = /dev/ttyS1
