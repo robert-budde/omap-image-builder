@@ -151,6 +151,44 @@ install_smarthome_py_develop () {
     echo "Setting ownership for smarthome.py"
     chown -R smarthome:smarthome smarthome
 
+    echo "Enabling foreground mode"
+    cd smarthome
+    git apply - <<EOF
+From 848cdc5a124bdd1283a149b745c0f3efcf624f05 Mon Sep 17 00:00:00 2001
+From: Robert Budde <robert.budde@ing-budde.de>
+Date: Sat, 28 Mar 2015 09:11:06 +0100
+Subject: [PATCH] enable foreground mode
+
+---
+ bin/smarthome.py | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/bin/smarthome.py b/bin/smarthome.py
+index 7e02a53..4a11529 100755
+--- a/bin/smarthome.py
++++ b/bin/smarthome.py
+@@ -573,6 +573,7 @@ if __name__ == '__main__':
+     arggroup.add_argument('-q', '--quiet', help='reduce logging to the logfile', action='store_true')
+     arggroup.add_argument('-V', '--version', help='show SmartHome.py version', action='store_true')
+     arggroup.add_argument('--start', help='start SmartHome.py and detach from console (default)', default=True, action='store_true')
++    arggroup.add_argument('-f', '--foreground', help='start SmartHome.py and stay in foreground', action='store_true')
+     args = argparser.parse_args()
+ 
+     if args.interactive:
+@@ -612,6 +613,8 @@ if __name__ == '__main__':
+         LOGLEVEL = logging.WARNING
+     elif args.verbose:
+         LOGLEVEL = logging.DEBUG
++    elif args.foreground:
++        MODE = 'foreground'
+ 
+     # check for pid file
+     pid = lib.daemon.get_pid(__file__)
+-- 
+2.1.4
+EOF
+    cd ..
+
     echo "Configuring smarthome.py"
     cd smarthome/etc
     touch logic.conf
