@@ -1,2 +1,0 @@
-dtb=am335x-boneblack-ibb.dtb
-
