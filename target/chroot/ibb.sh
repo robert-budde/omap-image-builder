@@ -123,7 +123,7 @@ Description=eibd KNX daemon
 After=network.target network-online.target connman.service avahi-daemon.service
 
 [Service]
-ExecStart=/usr/bin/eibd --eibaddr 1.1.0 --GroupCache --Server --Tunnelling --Discovery --tpuarts-ack-all-group --listen-tcp --listen-local tpuarts:/dev/ttyS2
+ExecStart=/usr/bin/eibd --eibaddr 1.1.0 --GroupCache --Server --Routing --Tunnelling --Discovery --tpuarts-ack-all-group --listen-tcp --listen-local tpuarts:/dev/ttyS2
 Restart=on-failure
 RestartSec=5
 User=smarthome
