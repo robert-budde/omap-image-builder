@@ -169,6 +169,36 @@ EOF
     systemctl enable eibd.service
 }
 
+install_knxd () {
+    echo "Installing knxd"
+
+    # knxd requires libpthsem which unfortunately isn't part of Debian
+    pthstr="pthsem-2.0.8"
+    wget https://www.auto.tuwien.ac.at/~mkoegler/pth/${pthstr}.tar.gz
+    tar xzf ${pthstr}.tar.gz
+    cd ${pthstr}
+    dpkg-buildpackage -b -uc
+    cd ..
+    sudo dpkg -i libpthsem*.deb
+
+    # now build+install knxd itself
+	git_repo="https://github.com/knxd/knxd.git"
+	git_target_dir="knxd"
+	git_clone
+    cd knxd
+    dpkg-buildpackage -b -uc
+    cd ..
+    sudo dpkg -i knxd_*.deb knxd-tools_*.deb
+
+    # clean-up
+    rm -rf ${pthstr} || true
+    rm -rf knxd || true
+    rm -f *.deb || true
+
+    # configure systemd
+    sed -i -e 's:'KNXD_OPTS=.*':'KNXD_OPTS="-c -D -R -T -S -b tpuarts:/dev/ttyS2"':g' /etc/knxd.conf
+}
+
 install_smarthome_py_develop () {
     echo "Cloning smarthome.py git repository (branch: develop)"
     mkdir -p /usr/local
@@ -400,7 +430,8 @@ if [ -f /usr/bin/git ] ; then
 	git config --global --unset-all user.name
 fi
 
-install_eibd
+install_knxd
+#install_eibd
 
 install_pip3_pkgs
 
