@@ -1,6 +1,6 @@
 #!/bin/sh -e
 #
-# Copyright (c) 2015 Robert Budde <>
+# Copyright (c) 2015 Robert Budde <robert.budde@ing-budde.de>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -22,7 +22,7 @@
 
 export LC_ALL=C
 
-u_boot_release="v2015.01"
+u_boot_release="v2015.10-rc4"
 
 #contains: rfs_username, release_date
 if [ -f /etc/rcn-ee.conf ] ; then
@@ -53,13 +53,49 @@ qemu_warning () {
 	fi
 }
 
+git_clone () {
+	mkdir -p ${git_target_dir} || true
+	qemu_command="git clone ${git_repo} ${git_target_dir} --depth 1 || true"
+	qemu_warning
+	git clone ${git_repo} ${git_target_dir} --depth 1 || true
+	sync
+	echo "${git_target_dir} : ${git_repo}" >> /opt/source/list.txt
+}
+
 git_clone_branch () {
 	mkdir -p ${git_target_dir} || true
 	qemu_command="git clone -b ${git_branch} ${git_repo} ${git_target_dir} --depth 1 || true"
 	qemu_warning
 	git clone -b ${git_branch} ${git_repo} ${git_target_dir} --depth 1 || true
 	sync
-#	echo "${git_target_dir} : ${git_repo}" >> /opt/source/list.txt
+	echo "${git_target_dir} : ${git_repo}" >> /opt/source/list.txt
+}
+
+install_git_repos () {
+	git_repo="https://github.com/RobertCNelson/dtb-rebuilder.git"
+	git_branch="4.1-ti"
+	git_target_dir="/opt/source/dtb-${git_branch}"
+	git_clone_branch
+
+	git_repo="https://github.com/robert-budde/bb.org-overlays"
+	git_target_dir="/opt/source/bb.org-overlays"
+	git_clone
+	if [ -f ${git_target_dir}/.git/config ] ; then
+		cd ${git_target_dir}/
+		if [ ! "x${repo_rcnee_pkg_version}" = "x" ] ; then
+			is_kernel=$(echo ${repo_rcnee_pkg_version} | grep 4.1)
+			if [ ! "x${is_kernel}" = "x" ] ; then
+				if [ -f /usr/bin/make ] ; then
+					./dtc-overlay.sh
+					make
+					make install
+					update-initramfs -u -k ${repo_rcnee_pkg_version}
+					rm -rf /home/${rfs_username}/git/ || true
+					make clean
+				fi
+			fi
+		fi
+	fi
 }
 
 setup_system () {
@@ -72,15 +108,13 @@ setup_system () {
 		fi
 	fi
 
-	if [ -f /opt/scripts/boot/am335x_evm.sh ] ; then
-		if [ -f /lib/systemd/system/serial-getty@.service ] ; then
-			cp /lib/systemd/system/serial-getty@.service /etc/systemd/system/serial-getty@ttyGS0.service
-			ln -s /etc/systemd/system/serial-getty@ttyGS0.service /etc/systemd/system/getty.target.wants/serial-getty@ttyGS0.service
+	if [ -f /lib/systemd/system/serial-getty@.service ] ; then
+		cp /lib/systemd/system/serial-getty@.service /etc/systemd/system/serial-getty@ttyGS0.service
+		ln -s /etc/systemd/system/serial-getty@ttyGS0.service /etc/systemd/system/getty.target.wants/serial-getty@ttyGS0.service
 
-			echo "" >> /etc/securetty
-			echo "#USB Gadget Serial Port" >> /etc/securetty
-			echo "ttyGS0" >> /etc/securetty
-		fi
+		echo "" >> /etc/securetty
+		echo "#USB Gadget Serial Port" >> /etc/securetty
+		echo "ttyGS0" >> /etc/securetty
 	fi
 
     cp /usr/share/zoneinfo/Europe/Berlin /etc/localtime
@@ -249,8 +283,7 @@ EOF
 cat > /etc/systemd/system/smarthome.service <<'EOF'
 [Unit]
 Description=SmartHome.py
-After=eibd.service
-After=owserver.service
+After=eibd.service owserver.service
 
 [Service]
 ExecStart=/usr/bin/python3 /usr/local/smarthome/bin/smarthome.py --foreground
@@ -324,8 +357,7 @@ cat > /etc/systemd/system/owhttpd.service <<'EOF'
 Description=Tiny webserver for 1-wire control
 Documentation=man:owhttpd(1)
 Requires=owserver.service
-After=owserver.service
-After=avahi-daemon.service
+After=owserver.service avahi-daemon.service
 
 [Service]
 ExecStart=/usr/bin/owhttpd --foreground --server=127.0.0.1:4304 --port=2121
@@ -358,11 +390,19 @@ is_this_qemu
 
 setup_system
 
+if [ -f /usr/bin/git ] ; then
+	git config --global user.email "${rfs_username}@example.com"
+	git config --global user.name "${rfs_username}"
+	install_git_repos
+	git config --global --unset-all user.email
+	git config --global --unset-all user.name
+fi
+
 install_eibd
 
 install_pip3_pkgs
 
-install_smarthome_py_develop
+#install_smarthome_py_develop
 
 install_smartvisu
 
@@ -370,4 +410,3 @@ install_owfs_systemd_services
 
 #unsecure_root
 
-#
