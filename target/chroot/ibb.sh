@@ -117,7 +117,7 @@ setup_system () {
 		echo "ttyGS0" >> /etc/securetty
 	fi
 
-    cp /usr/share/zoneinfo/Europe/Berlin /etc/localtime
+	cp /usr/share/zoneinfo/Europe/Berlin /etc/localtime
 }
 
 install_pip3_pkgs () {
@@ -125,279 +125,229 @@ install_pip3_pkgs () {
 		echo "Installing pip3 packages"
 
 		pip3 install ephem
-		#pip3 install pyusb
+		pip3 install --pre pyusb
 
-        wget http://downloads.sourceforge.net/project/pyusb/PyUSB%201.0/1.0.0-beta-2/pyusb-1.0.0b2.tar.gz
-        tar -xzvf pyusb-1.0.0b2.tar.gz 
-        cd pyusb-1.0.0b2/
-        sudo python3 setup.py install
-        cd ..
-        rm pyusb-1.0.0b2.tar.gz
-        rm -r pyusb-1.0.0b2
+		#wget http://downloads.sourceforge.net/project/pyusb/PyUSB%201.0/1.0.0-beta-2/pyusb-1.0.0b2.tar.gz
+		#tar -xzvf pyusb-1.0.0b2.tar.gz
+		#cd pyusb-1.0.0b2/
+		#sudo python3 setup.py install
+		#cd ..
+		#rm -rf pyusb-1.0.0b2* || true
 	fi
 }
 
 install_eibd () {
-    # should be a repo...
-    echo "Installing eibd packages"
-    url="http://www.ing-budde.de/downloads/eibd"
-    eibd_debs="libpthsem20_2.0.8_armhf.deb eibd-server_0.0.5_armhf.deb \
- libeibclient0_0.0.5_armhf.deb eibd-clients_0.0.5_armhf.deb"
-    for deb in ${eibd_debs}; do
-        wget ${url}/${deb}
-        dpkg -i ${deb}
-        rm ${deb}
-    done    
+	# should be a repo...
+	echo "Installing eibd packages"
+	url="http://www.ing-budde.de/downloads/eibd"
+	eibd_debs="libpthsem20_2.0.8_armhf.deb eibd-server_0.0.5_armhf.deb \
+		libeibclient0_0.0.5_armhf.deb eibd-clients_0.0.5_armhf.deb"
+	for deb in ${eibd_debs}; do
+		wget ${url}/${deb}
+		dpkg -i ${deb}
+		rm ${deb}
+	done
 
-    echo "Installing eibd systemd service"
-    mkdir -p /etc/systemd/system
-cat > /etc/systemd/system/eibd.service <<'EOF'
-[Unit]
-Description=eibd KNX daemon
-After=network.target network-online.target connman.service avahi-daemon.service
+	echo "Installing eibd systemd service"
+	mkdir -p /etc/systemd/system
+	cat > /etc/systemd/system/eibd.service <<- 'EOF'
+		[Unit]
+		Description=eibd KNX daemon
+		After=network.target network-online.target connman.service avahi-daemon.service
 
-[Service]
-ExecStart=/usr/bin/eibd --eibaddr 1.1.0 --GroupCache --Server --Routing --Tunnelling --Discovery --tpuarts-ack-all-group --listen-tcp --listen-local tpuarts:/dev/ttyS2
-Restart=on-failure
-RestartSec=5
-User=smarthome
-Group=smarthome
+		[Service]
+		ExecStart=/usr/bin/eibd --eibaddr 1.1.0 --GroupCache --Server --Routing --Tunnelling --Discovery --tpuarts-ack-all-group --listen-tcp --listen-local tpuarts:/dev/ttyS2
+		Restart=on-failure
+		RestartSec=5
+		User=smarthome
+		Group=smarthome
 
-[Install]
-WantedBy=multi-user.target
-EOF
-    systemctl enable eibd.service
+		[Install]
+		WantedBy=multi-user.target
+	EOF
+	systemctl enable eibd.service
 }
 
 install_knxd () {
-    echo "Installing knxd"
+	echo "Installing knxd"
 
-    # knxd requires libpthsem which unfortunately isn't part of Debian
-    pthstr="pthsem-2.0.8"
-    wget https://www.auto.tuwien.ac.at/~mkoegler/pth/${pthstr}.tar.gz
-    tar xzf ${pthstr}.tar.gz
-    cd ${pthstr}
-    dpkg-buildpackage -b -uc
-    cd ..
-    sudo dpkg -i libpthsem*.deb
+	# knxd requires libpthsem which unfortunately isn't part of Debian
+	pthver="2.0.8"
+	wget https://www.auto.tuwien.ac.at/~mkoegler/pth/pthsem_${pthver}.tar.gz
+	tar xzf pthsem_${pthver}.tar.gz
+	cd pthsem-${pthver}
+	dpkg-buildpackage -b -uc
+	cd ..
+	sudo dpkg -i libpthsem*.deb
 
-    # now build+install knxd itself
+	# clean-up
+	rm -rf pthsem* || true
+	rm -f libpthsem* || true
+
+	# now build+install knxd itself
 	git_repo="https://github.com/knxd/knxd.git"
 	git_target_dir="knxd"
 	git_clone
-    cd knxd
-    dpkg-buildpackage -b -uc
-    cd ..
-    sudo dpkg -i knxd_*.deb knxd-tools_*.deb
+	cd knxd
+	dpkg-buildpackage -b -uc
+	cd ..
+	sudo dpkg -i knxd_*.deb knxd-tools_*.deb
 
-    # clean-up
-    rm -rf ${pthstr} || true
-    rm -rf knxd || true
-    rm -f *.deb || true
+	# clean-up
+	rm -rf knxd* || true
 
-    # configure systemd
-    sed -i -e 's:'KNXD_OPTS=.*':'KNXD_OPTS="-c -D -R -T -S -b tpuarts:/dev/ttyS2"':g' /etc/knxd.conf
+	# customize systemd config
+	sed -i -e 's:KNXD_OPTS=\".*\":KNXD_OPTS=\"--GroupCache --Discovery --Routing --Tunnelling --Server --layer2=tpuarts\:/dev/ttyS2 --tpuarts-ack-all-group\":g' /etc/knxd.conf
 }
 
 install_smarthome_py_develop () {
-    echo "Cloning smarthome.py git repository (branch: develop)"
-    mkdir -p /usr/local
-    cd /usr/local
-	git_repo="http://github.com/mknx/smarthome.git"
-	git_branch="develop"
+	echo "Cloning smarthome.py git repository (branch: develop)"
+	mkdir -p /usr/local
+	cd /usr/local
+	git_repo="http://github.com/robert-budde/smarthome.git"
 	git_target_dir="smarthome"
+	git_branch="develop"
 	git_clone_branch
 
-    #wget https://github.com/mknx/smarthome/archive/develop.zip
-    #unzip develop.zip -d .
-    #mv smarthome-develop smarthome 
+	echo "Setting ownership for smarthome.py"
+	chown -R smarthome:smarthome smarthome
 
-    echo "Setting ownership for smarthome.py"
-    chown -R smarthome:smarthome smarthome
+	echo "Configuring smarthome.py"
+	cd smarthome/etc
+	touch logic.conf
+	cat > smarthome.conf <<- 'EOF'
+		# smarthome.conf
+		lat = 51.514167
+		lon = 7.433889
+		elev = 500
+		tz = 'Europe/Berlin'
+		item_change_log = yes
+	EOF
 
-    echo "Enabling foreground mode"
-    cd smarthome
-    git apply - <<EOF
-From 848cdc5a124bdd1283a149b745c0f3efcf624f05 Mon Sep 17 00:00:00 2001
-From: Robert Budde <robert.budde@ing-budde.de>
-Date: Sat, 28 Mar 2015 09:11:06 +0100
-Subject: [PATCH] enable foreground mode
+	cat > plugin.conf <<- 'EOF'
+		# plugin.conf
+		[knx]
+		    class_name = KNX
+		    class_path = plugins.knx
+		    host = 127.0.0.1
+		    port = 6720
+		#    send_time = 600 # update date/time every 600 seconds, default none
+		#    time_ga = 1/1/1 # default none
+		#    date_ga = 1/1/2 # default none
+		    busmonitor = yes
+		[visu]
+		    class_name = WebSocket
+		    class_path = plugins.visu
+		    smartvisu_dir = /var/www/html/smartVISU
+		    acl = rw
+		[sql]
+		    class_name = SQL
+		    class_path = plugins.sqlite
+		[ow]
+		    class_name = OneWire
+		    class_path = plugins.onewire
+		    host = 127.0.0.1
+		    port = 4304
+		[enocean]
+		    class_name = EnOcean
+		    class_path = plugins.enocean
+		    serialport = /dev/ttyS4
+		#[dlms]
+		#    class_name = DLMS
+		#    class_path = plugins.dlms
+		#    serialport = /dev/ttyS1
+		#    update_cycle = 20
+		#    use_checksum = True
+		#    reset_baudrate = False
+		#    no_waiting = True
+		[cli]
+		    class_name = CLI
+		    class_path = plugins.cli
+		    ip = 0.0.0.0
+		    update = True
+	EOF
 
----
- bin/smarthome.py | 3 +++
- 1 file changed, 3 insertions(+)
+	echo "Installing smarthome.py systemd service"
+	mkdir -p /etc/systemd/system
+	cat > /etc/systemd/system/smarthome.service <<- 'EOF'
+		[Unit]
+		Description=SmartHome.py
+		After=eibd.service owserver.service
 
-diff --git a/bin/smarthome.py b/bin/smarthome.py
-index 7e02a53..4a11529 100755
---- a/bin/smarthome.py
-+++ b/bin/smarthome.py
-@@ -573,6 +573,7 @@ if __name__ == '__main__':
-     arggroup.add_argument('-q', '--quiet', help='reduce logging to the logfile', action='store_true')
-     arggroup.add_argument('-V', '--version', help='show SmartHome.py version', action='store_true')
-     arggroup.add_argument('--start', help='start SmartHome.py and detach from console (default)', default=True, action='store_true')
-+    arggroup.add_argument('-f', '--foreground', help='start SmartHome.py and stay in foreground', action='store_true')
-     args = argparser.parse_args()
- 
-     if args.interactive:
-@@ -612,6 +613,8 @@ if __name__ == '__main__':
-         LOGLEVEL = logging.WARNING
-     elif args.verbose:
-         LOGLEVEL = logging.DEBUG
-+    elif args.foreground:
-+        MODE = 'foreground'
- 
-     # check for pid file
-     pid = lib.daemon.get_pid(__file__)
--- 
-2.1.4
-EOF
-    cd ..
+		[Service]
+		ExecStart=/usr/bin/python3 /usr/local/smarthome/bin/smarthome.py --foreground
+		User=smarthome
+		Group=smarthome
 
-    echo "Configuring smarthome.py"
-    cd smarthome/etc
-    touch logic.conf
-cat >smarthome.conf <<EOF
-# smarthome.conf
-lat = 51.514167
-lon = 7.433889
-elev = 500
-tz = 'Europe/Berlin'
-item_change_log = yes
-EOF
-
-cat >plugin.conf <<EOF
-# plugin.conf
-[knx]
-    class_name = KNX
-    class_path = plugins.knx
-    host = 127.0.0.1
-    port = 6720
-#    send_time = 600 # update date/time every 600 seconds, default none
-#    time_ga = 1/1/1 # default none
-#    date_ga = 1/1/2 # default none
-    busmonitor = yes
-[visu]
-    class_name = WebSocket
-    class_path = plugins.visu
-    smartvisu_dir = /var/www/html/smartVISU
-    acl = rw
-[sql]
-    class_name = SQL
-    class_path = plugins.sqlite
-[ow]
-    class_name = OneWire
-    class_path = plugins.onewire
-    host = 127.0.0.1
-    port = 4304
-[enocean]
-    class_name = EnOcean
-    class_path = plugins.enocean
-    serialport = /dev/ttyS4
-#[dlms]
-#    class_name = DLMS
-#    class_path = plugins.dlms
-#    serialport = /dev/ttyS1
-#    update_cycle = 20
-#    use_checksum = True
-#    reset_baudrate = False
-#    no_waiting = True
-[cli]
-    class_name = CLI
-    class_path = plugins.cli
-    ip = 0.0.0.0
-    update = True
-EOF
-
-    echo "Installing smarthome.py systemd service"
-    mkdir -p /etc/systemd/system
-cat > /etc/systemd/system/smarthome.service <<'EOF'
-[Unit]
-Description=SmartHome.py
-After=eibd.service owserver.service
-
-[Service]
-ExecStart=/usr/bin/python3 /usr/local/smarthome/bin/smarthome.py --foreground
-User=smarthome
-Group=smarthome
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    systemctl enable smarthome.service
+		[Install]
+		WantedBy=multi-user.target
+	EOF
+	systemctl enable smarthome.service
 }
 
 install_smartvisu () {
-    mkdir -p /var/www/html
-    cd /var/www/html
-    rm -f index.html || true
+	mkdir -p /var/www/html
+	cd /var/www/html
+	rm -f index.html || true
 
-	svn checkout http://smartvisu.googlecode.com/svn/trunk/ smartVISU
+	git_repo="http://github.com/robert-budde/smartvisu.git"
+	git_target_dir="smartVISU"
+	git_clone
 
-    #wget https://github.com/mknx/smarthome/archive/develop.zip
-    #unzip develop.zip -d /usr/local
-    #mv /usr/local/smarthome-develop /usr/local/smarthome 
+	echo "Setting ownership for smartVISU"
+	chown -R www-data:www-data smartVISU
+	chmod -R 775 smartVISU
 
-#    chown -R smarthome:smarthome /usr/local/smarthome
-
-#    echo "Installing smartvisu release 2.7"
-#    wget http://smartvisu.de/download/smartVISU_2.7.zip
-#    unzip smartVISU_2.7.zip
-#    rm smartVISU_2.7.zip
-
-    echo "Setting ownership for smartVISU"
-    chown -R www-data:www-data smartVISU
-    chmod -R 775 smartVISU
-
-    echo "Setting ownership for smartVISU smarthome pages"
-    cd smartVISU/pages/
-    mkdir smarthome
-    chown -R smarthome:smarthome smarthome
+	echo "Setting ownership for smartVISU smarthome pages"
+	cd smartVISU/pages/
+	mkdir smarthome
+	chown -R smarthome:smarthome smarthome
 }
 
-install_owfs_systemd_services () {
-    echo "Removing owserver init.d script"
-    update-rc.d owserver remove
-    rm /etc/init.d/owserver
-    echo "Removing owhttpd init.d script"
-    update-rc.d owhttpd remove
-    rm /etc/init.d/owhttpd
+customize_owfs_systemd_services () {
+	echo "Removing owserver init.d script"
+	update-rc.d owserver remove
+	rm /etc/init.d/owserver
+	echo "Removing owhttpd init.d script"
+	update-rc.d owhttpd remove
+	rm /etc/init.d/owhttpd
 
-    echo "Installing owserver systemd service"
-    mkdir -p /etc/systemd/system
-cat > /etc/systemd/system/owserver.service <<'EOF'
-[Unit]
-Description=Backend server for 1-wire control
-Documentation=man:owserver(1)
+	echo "Installing owserver systemd service"
+	mkdir -p /etc/systemd/system
+	cat > /etc/systemd/system/owserver.service <<- 'EOF'
+		[Unit]
+		Description=Backend server for 1-wire control
+		Documentation=man:owserver(1)
 
-[Service]
-ExecStart=/usr/bin/owserver --foreground --i2c=/dev/i2c-3 --i2c=/dev/i2c-4 --i2c=/dev/i2c-5 --i2c=/dev/i2c-6 --port=0.0.0.0:4304
-Restart=on-failure
-#User=ow
-#Group=ow
+		[Service]
+		ExecStart=/usr/bin/owserver --foreground --i2c=/dev/i2c-3 --i2c=/dev/i2c-4 --i2c=/dev/i2c-5 --i2c=/dev/i2c-6 --port=0.0.0.0:4304
+		Restart=on-failure
+		#User=ow
+		#Group=ow
 
-[Install]
-WantedBy=multi-user.target
-EOF
-    systemctl enable owserver.service
+		[Install]
+		WantedBy=multi-user.target
+	EOF
+	systemctl enable owserver.service
 
-    echo "Installing owhttpd systemd service"
-    mkdir -p /etc/systemd/system
-cat > /etc/systemd/system/owhttpd.service <<'EOF'
-[Unit]
-Description=Tiny webserver for 1-wire control
-Documentation=man:owhttpd(1)
-Requires=owserver.service
-After=owserver.service avahi-daemon.service
+	echo "Installing owhttpd systemd service"
+	mkdir -p /etc/systemd/system
+	cat > /etc/systemd/system/owhttpd.service <<- 'EOF'
+		[Unit]
+		Description=Tiny webserver for 1-wire control
+		Documentation=man:owhttpd(1)
+		Requires=owserver.service
+		After=owserver.service avahi-daemon.service
 
-[Service]
-ExecStart=/usr/bin/owhttpd --foreground --server=127.0.0.1:4304 --port=2121
-#User=ow
-#Group=ow
+		[Service]
+		ExecStart=/usr/bin/owhttpd --foreground --server=127.0.0.1:4304 --port=2121
+		#User=ow
+		#Group=ow
 
-[Install]
-WantedBy=multi-user.target
-EOF
-    systemctl enable owhttpd.service
+		[Install]
+		WantedBy=multi-user.target
+	EOF
+	systemctl enable owhttpd.service
 }
 
 unsecure_root () {
@@ -437,9 +387,9 @@ install_pip3_pkgs
 
 #install_smarthome_py_develop
 
-install_smartvisu
+#install_smartvisu
 
-install_owfs_systemd_services
+customize_owfs_systemd_services
 
 #unsecure_root
 
