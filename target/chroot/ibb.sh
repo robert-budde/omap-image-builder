@@ -385,9 +385,9 @@ install_knxd
 
 install_pip3_pkgs
 
-#install_smarthome_py_develop
+install_smarthome_py_develop
 
-#install_smartvisu
+install_smartvisu
 
 customize_owfs_systemd_services
 
