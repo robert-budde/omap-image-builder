@@ -197,7 +197,7 @@ install_knxd () {
 	rm -rf knxd* || true
 
 	# customize systemd config
-	sed -i -e 's:KNXD_OPTS=\".*\":KNXD_OPTS=\"--GroupCache --Discovery --Routing --Tunnelling --Server --layer2=tpuarts\:/dev/ttyS2 --tpuarts-ack-all-group\":g' /etc/knxd.conf
+	sed -i -e 's:KNXD_OPTS=\".*\":KNXD_OPTS=\"--GroupCache --Discovery --Routing --Tunnelling --Server --tpuarts-ack-all-group --layer2=tpuarts\:/dev/ttyS2\":g' /etc/knxd.conf
 }
 
 install_smarthome_py_develop () {
