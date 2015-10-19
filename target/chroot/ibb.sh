@@ -198,6 +198,9 @@ install_knxd () {
 
 	# customize systemd config
 	sed -i -e 's:KNXD_OPTS=\".*\":KNXD_OPTS=\"--GroupCache --Discovery --Routing --Tunnelling --Server --tpuarts-ack-all-group --layer2=tpuarts\:/dev/ttyS2\":g' /etc/knxd.conf
+
+	# add knxd to dialout group to allow access to tty
+	usermod -a -G dialout knxd
 }
 
 install_smarthome_py_develop () {
