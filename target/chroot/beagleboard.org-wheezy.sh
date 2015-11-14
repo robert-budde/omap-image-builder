@@ -23,7 +23,7 @@
 export LC_ALL=C
 
 chromium_release="chromium-33.0.1750.117"
-u_boot_release="v2015.10-rc4"
+u_boot_release="v2015.10"
 u_boot_release_x15="v2015.07"
 #bone101_git_sha="50e01966e438ddc43b9177ad4e119e5274a0130d"
 
@@ -208,8 +208,8 @@ install_gem_pkgs () {
 #		echo "gem: [beaglebone]"
 #		gem install beaglebone || true
 
-		echo "gem: [jekyll ${gem_wheezy}]"
-		gem install jekyll ${gem_wheezy} || true
+		echo "gem: [jekyll -v 2.5.3 ${gem_wheezy}]"
+		gem install jekyll -v 2.5.3 ${gem_wheezy} || true
 	fi
 }
 
@@ -240,6 +240,7 @@ install_pip_pkgs () {
 
 		easy_install -U distribute
 		pip install Adafruit_BBIO
+		#pip install --upgrade PyBBIO
 	fi
 }
 
@@ -438,18 +439,6 @@ install_git_repos () {
 #		cd ${git_target_dir}/
 #		if [ -f /usr/bin/make ] ; then
 #			make LIBDIR_APP_LOADER=/usr/lib/ INCDIR_APP_LOADER=/usr/include
-#		fi
-#		cd /
-#	fi
-
-#	git_repo="https://github.com/alexanderhiam/PyBBIO.git"
-#	git_target_dir="/opt/source/PyBBIO"
-#	git_clone
-#	if [ -f ${git_target_dir}/.git/config ] ; then
-#		cd ${git_target_dir}/
-#		if [ -f /usr/bin/dtc ] ; then
-#			sed -i "s/PLATFORM = ''/PLATFORM = 'BeagleBone >=3.8'/g" setup.py
-#			python setup.py install
 #		fi
 #		cd /
 #	fi

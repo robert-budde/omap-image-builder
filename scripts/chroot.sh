@@ -145,6 +145,17 @@ report_size () {
 	echo "Log: Size of: [${tempdir}]: $(du -sh ${tempdir} 2>/dev/null | awk '{print $1}')"
 }
 
+chroot_mount_run () {
+	if [ ! -d "${tempdir}/run" ] ; then
+		sudo mkdir -p ${tempdir}/run || true
+		sudo chmod -R 755 ${tempdir}/run
+	fi
+
+	if [ "$(mount | grep ${tempdir}/run | awk '{print $3}')" != "${tempdir}/run" ] ; then
+		sudo mount -t tmpfs run "${tempdir}/run"
+	fi
+}
+
 chroot_mount () {
 	if [ "$(mount | grep ${tempdir}/sys | awk '{print $3}')" != "${tempdir}/sys" ] ; then
 		sudo mount -t sysfs sysfs "${tempdir}/sys"
@@ -196,6 +207,17 @@ chroot_umount () {
 			exit 1
 		fi
 	fi
+
+	if [ "$(mount | grep ${tempdir}/run | awk '{print $3}')" = "${tempdir}/run" ] ; then
+		echo "Log: umount: [${tempdir}/run]"
+		sync
+		sudo umount -fl "${tempdir}/run"
+
+		if [ "$(mount | grep ${tempdir}/run | awk '{print $3}')" = "${tempdir}/run" ] ; then
+			echo "Log: ERROR: umount [${tempdir}/run] failed..."
+			exit 1
+		fi
+	fi
 }
 
 chroot_stopped () {
@@ -210,9 +232,15 @@ trap chroot_stopped EXIT
 check_defines
 
 if [ "x${host_arch}" != "xarmv7l" ] && [ "x${host_arch}" != "xaarch64" ] ; then
-	sudo cp $(which qemu-arm-static) "${tempdir}/usr/bin/"
+	if [ "x${deb_arch}" == "xarmel" ] || [ "x${deb_arch}" == "xarmhf" ] ; then
+		sudo cp $(which qemu-arm-static) "${tempdir}/usr/bin/"
+	fi
+	if [ "x${deb_arch}" == "xarm64" ] ; then
+		sudo cp $(which qemu-aarch64-static) "${tempdir}/usr/bin/"
+	fi
 fi
 
+chroot_mount_run
 echo "Log: Running: debootstrap second-stage in [${tempdir}]"
 sudo chroot "${tempdir}" debootstrap/debootstrap --second-stage
 echo "Log: Complete: [sudo chroot ${tempdir} debootstrap/debootstrap --second-stage]"
@@ -281,10 +309,8 @@ if [ "x${deb_distribution}" = "xdebian" ] ; then
 
 	#apt: emulate apt-get clean:
 	echo '#Custom apt-get clean' > /tmp/02apt-get-clean
-	echo 'DPkg::Post-Invoke { "rm -f /var/cache/apt/archives/*.deb /var/cache/apt/archives/partial/*.deb /var/cache/apt/*.bin || true"; };' >> /tmp/02apt-get-clean
-	echo 'APT::Update::Post-Invoke { "rm -f /var/cache/apt/archives/*.deb /var/cache/apt/archives/partial/*.deb /var/cache/apt/*.bin || true"; };' >> /tmp/02apt-get-clean
-	echo 'Dir::Cache::pkgcache ""; Dir::Cache::srcpkgcache "";' >> /tmp/02apt-get-clean
-
+	echo 'DPkg::Post-Invoke { "rm -f /var/cache/apt/archives/*.deb /var/cache/apt/archives/partial/*.deb || true"; };' >> /tmp/02apt-get-clean
+	echo 'APT::Update::Post-Invoke { "rm -f /var/cache/apt/archives/*.deb /var/cache/apt/archives/partial/*.deb || true"; };' >> /tmp/02apt-get-clean
 	sudo mv /tmp/02apt-get-clean "${tempdir}/etc/apt/apt.conf.d/02apt-get-clean"
 
 	#apt: drop translations
@@ -409,17 +435,28 @@ if [ "x${deb_arch}" = "xarmhf" ] ; then
 		esac
 		;;
 	ubuntu)
-		sudo cp "${OIB_DIR}/target/init_scripts/generic-${deb_distribution}.conf" "${tempdir}/etc/init/generic-boot-script.conf"
-		sudo cp "${OIB_DIR}/target/init_scripts/capemgr-${deb_distribution}.sh" "${tempdir}/etc/init/capemgr.sh"
-		sudo cp "${OIB_DIR}/target/init_scripts/capemgr" "${tempdir}/etc/default/"
-		distro="Ubuntu"
+		case "${deb_codename}" in
+		trusty)
+			sudo cp "${OIB_DIR}/target/init_scripts/generic-${deb_distribution}.conf" "${tempdir}/etc/init/generic-boot-script.conf"
+			sudo cp "${OIB_DIR}/target/init_scripts/capemgr-${deb_distribution}.sh" "${tempdir}/etc/init/capemgr.sh"
+			sudo cp "${OIB_DIR}/target/init_scripts/capemgr" "${tempdir}/etc/default/"
+			distro="Ubuntu"
 
-		if [ -f "${tempdir}/etc/init/failsafe.conf" ] ; then
-			#Ubuntu: with no ethernet cable connected it can take up to 2 mins to login, removing upstart sleep calls..."
-			sudo sed -i -e 's:sleep 20:#sleep 20:g' "${tempdir}/etc/init/failsafe.conf"
-			sudo sed -i -e 's:sleep 40:#sleep 40:g' "${tempdir}/etc/init/failsafe.conf"
-			sudo sed -i -e 's:sleep 59:#sleep 59:g' "${tempdir}/etc/init/failsafe.conf"
-		fi
+			if [ -f "${tempdir}/etc/init/failsafe.conf" ] ; then
+				#Ubuntu: with no ethernet cable connected it can take up to 2 mins to login, removing upstart sleep calls..."
+				sudo sed -i -e 's:sleep 20:#sleep 20:g' "${tempdir}/etc/init/failsafe.conf"
+				sudo sed -i -e 's:sleep 40:#sleep 40:g' "${tempdir}/etc/init/failsafe.conf"
+				sudo sed -i -e 's:sleep 59:#sleep 59:g' "${tempdir}/etc/init/failsafe.conf"
+			fi
+			;;
+		vivid|wily|xenial)
+			#while bb-customizations installes "generic-board-startup.service" other boards/configs could use this default.
+			sudo cp "${OIB_DIR}/target/init_scripts/systemd-generic-board-startup.service" "${tempdir}/lib/systemd/system/generic-board-startup.service"
+			sudo cp "${OIB_DIR}/target/init_scripts/systemd-capemgr.service" "${tempdir}/lib/systemd/system/capemgr.service"
+			sudo cp "${OIB_DIR}/target/init_scripts/capemgr" "${tempdir}/etc/default/"
+			distro="Ubuntu"
+			;;
+		esac
 		;;
 	esac
 fi
@@ -462,6 +499,9 @@ cat > "${DIR}/chroot_script.sh" <<-__EOF__
 	is_this_qemu () {
 		unset warn_qemu_will_fail
 		if [ -f /usr/bin/qemu-arm-static ] ; then
+			warn_qemu_will_fail=1
+		fi
+		if [ -f /usr/bin/qemu-aarch64-static ] ; then
 			warn_qemu_will_fail=1
 		fi
 	}
@@ -691,6 +731,9 @@ cat > "${DIR}/chroot_script.sh" <<-__EOF__
 		echo "KERNEL==\"hidraw*\", GROUP=\"plugdev\", MODE=\"0660\"" > /etc/udev/rules.d/50-hidraw.rules
 		echo "KERNEL==\"spidev*\", GROUP=\"spi\", MODE=\"0660\"" > /etc/udev/rules.d/50-spi.rules
 
+		echo "SUBSYSTEM==\"uio\", SYMLINK+=\"uio/%s{device/of_node/uio-alias}\"" > /etc/udev/rules.d/uio.rules
+		echo "SUBSYSTEM==\"uio\", GROUP=\"users\", MODE=\"0660\"" >> /etc/udev/rules.d/uio.rules
+
 		default_groups="admin,adm,dialout,i2c,kmem,spi,cdrom,floppy,audio,dip,video,netdev,plugdev,users,systemd-journal,weston-launch,xenomai"
 
 		pkg="sudo"
@@ -831,44 +874,6 @@ cat > "${DIR}/chroot_script.sh" <<-__EOF__
 		fi
 	}
 
-	cleanup () {
-		echo "Log: (chroot): cleanup"
-		mkdir -p /boot/uboot/
-
-		if [ -f /etc/apt/apt.conf ] ; then
-			rm -rf /etc/apt/apt.conf || true
-		fi
-		apt-get clean
-		rm -rf /var/lib/apt/lists/*
-
-		if [ -d /var/cache/c9-core-installer/ ] ; then
-			rm -rf /var/cache/c9-core-installer/ || true
-		fi
-		if [ -d /var/cache/ipumm-dra7xx-installer/ ] ; then
-			rm -rf /var/cache/ipumm-dra7xx-installer/ || true
-		fi
-		if [ -d /var/cache/ti-c6000-cgt-v8.0.x-installer/ ] ; then
-			rm -rf /var/cache/ti-c6000-cgt-v8.0.x-installer/ || true
-		fi
-		if [ -d /var/cache/ti-pru-cgt-installer/ ] ; then
-			rm -rf /var/cache/ti-pru-cgt-installer/ || true
-		fi
-		if [ -d /var/cache/vpdma-dra7xx-installer/ ] ; then
-			rm -rf /var/cache/vpdma-dra7xx-installer/ || true
-		fi
-		rm -f /usr/sbin/policy-rc.d
-
-		if [ "x\${distro}" = "xUbuntu" ] ; then
-			rm -f /sbin/initctl || true
-			dpkg-divert --local --rename --remove /sbin/initctl
-		fi
-
-		#left over from init/upstart scripts running in chroot...
-		if [ -d /var/run/ ] ; then
-			rm -rf /var/run/* || true
-		fi
-	}
-
 	#cat /chroot_script.sh
 	is_this_qemu
 	stop_init
@@ -903,7 +908,6 @@ cat > "${DIR}/chroot_script.sh" <<-__EOF__
 		systemd_tweaks
 	fi
 
-	cleanup
 	rm -f /chroot_script.sh || true
 __EOF__
 
@@ -1064,6 +1068,61 @@ if [ -n "${chroot_after_hook}" -a -r "${DIR}/${chroot_after_hook}" ] ; then
 	chroot_after_hook=""
 fi
 
+cat > "${DIR}/cleanup_script.sh" <<-__EOF__
+	#!/bin/sh -e
+	export LC_ALL=C
+	export DEBIAN_FRONTEND=noninteractive
+
+	#set distro:
+	. /etc/rcn-ee.conf
+
+	cleanup () {
+		echo "Log: (chroot): cleanup"
+		mkdir -p /boot/uboot/
+
+		if [ -f /etc/apt/apt.conf ] ; then
+			rm -rf /etc/apt/apt.conf || true
+		fi
+		apt-get clean
+		rm -rf /var/lib/apt/lists/*
+
+		if [ -d /var/cache/c9-core-installer/ ] ; then
+			rm -rf /var/cache/c9-core-installer/ || true
+		fi
+		if [ -d /var/cache/ipumm-dra7xx-installer/ ] ; then
+			rm -rf /var/cache/ipumm-dra7xx-installer/ || true
+		fi
+		if [ -d /var/cache/ti-c6000-cgt-v8.0.x-installer/ ] ; then
+			rm -rf /var/cache/ti-c6000-cgt-v8.0.x-installer/ || true
+		fi
+		if [ -d /var/cache/ti-pru-cgt-installer/ ] ; then
+			rm -rf /var/cache/ti-pru-cgt-installer/ || true
+		fi
+		if [ -d /var/cache/vpdma-dra7xx-installer/ ] ; then
+			rm -rf /var/cache/vpdma-dra7xx-installer/ || true
+		fi
+		rm -f /usr/sbin/policy-rc.d
+
+		if [ "x\${distro}" = "xUbuntu" ] ; then
+			rm -f /sbin/initctl || true
+			dpkg-divert --local --rename --remove /sbin/initctl
+		fi
+
+#		#This is tmpfs, clear out any left overs...
+#		if [ -d /run/ ] ; then
+#			rm -rf /run/* || true
+#		fi
+	}
+
+	cleanup
+	rm -f /cleanup_script.sh || true
+__EOF__
+
+###MUST BE LAST...
+sudo mv "${DIR}/cleanup_script.sh" "${tempdir}/cleanup_script.sh"
+sudo chroot "${tempdir}" /bin/sh -e cleanup_script.sh
+echo "Log: Complete: [sudo chroot ${tempdir} /bin/sh -e cleanup_script.sh]"
+
 #add /boot/uEnv.txt update script
 if [ -d "${tempdir}/etc/kernel/postinst.d/" ] ; then
 	if [ ! -f "${tempdir}/etc/kernel/postinst.d/zz-uenv_txt" ] ; then
@@ -1074,6 +1133,10 @@ fi
 
 if [ -f "${tempdir}/usr/bin/qemu-arm-static" ] ; then
 	sudo rm -f "${tempdir}/usr/bin/qemu-arm-static" || true
+fi
+
+if [ -f "${tempdir}/usr/bin/qemu-aarch64-static" ] ; then
+	sudo rm -f "${tempdir}/usr/bin/qemu-aarch64-static" || true
 fi
 
 echo "${rfs_username}:${rfs_password}" > /tmp/user_password.list

@@ -22,7 +22,7 @@
 
 export LC_ALL=C
 
-u_boot_release="v2015.10-rc4"
+u_boot_release="v2015.10"
 u_boot_release_x15="v2015.07"
 #bone101_git_sha="50e01966e438ddc43b9177ad4e119e5274a0130d"
 
@@ -231,6 +231,7 @@ install_pip_pkgs () {
 			cd ${git_target_dir}/
 			python setup.py install
 		fi
+		pip install --upgrade PyBBIO
 	fi
 }
 
@@ -433,20 +434,13 @@ install_git_repos () {
 		cd /
 	fi
 
-	git_repo="https://github.com/alexanderhiam/PyBBIO.git"
-	git_target_dir="/opt/source/PyBBIO"
-	git_clone
-	if [ -f ${git_target_dir}/.git/config ] ; then
-		cd ${git_target_dir}/
-		if [ -f /usr/bin/dtc ] ; then
-			sed -i "s/PLATFORM = ''/PLATFORM = 'BeagleBone >=3.8'/g" setup.py
-			python setup.py install
-		fi
-		cd /
-	fi
-
 	git_repo="https://github.com/RobertCNelson/dtb-rebuilder.git"
-	git_branch="4.1-ti"
+	is_kernel=$(echo ${repo_rcnee_pkg_version} | grep 4.1 || true)
+	if [ ! "x${is_kernel}" = "x" ] ; then
+		git_branch="4.1-ti"
+	else
+		git_branch="3.14-ti"
+	fi
 	git_target_dir="/opt/source/dtb-${git_branch}"
 	git_clone_branch
 
@@ -456,7 +450,7 @@ install_git_repos () {
 	if [ -f ${git_target_dir}/.git/config ] ; then
 		cd ${git_target_dir}/
 		if [ ! "x${repo_rcnee_pkg_version}" = "x" ] ; then
-			is_kernel=$(echo ${repo_rcnee_pkg_version} | grep 4.1)
+			is_kernel=$(echo ${repo_rcnee_pkg_version} | grep 4.1 || true)
 			if [ ! "x${is_kernel}" = "x" ] ; then
 				if [ -f /usr/bin/make ] ; then
 					./dtc-overlay.sh
