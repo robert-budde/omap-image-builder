@@ -275,7 +275,9 @@ install_smarthome_py_develop () {
 	cat > /etc/systemd/system/smarthome.service <<- 'EOF'
 		[Unit]
 		Description=SmartHome.py
-		After=eibd.service owserver.service
+		After=knxd.service owserver.service
+		Restart=on-failure
+		RestartSec=10
 
 		[Service]
 		ExecStart=/usr/bin/python3 /usr/local/smarthome/bin/smarthome.py --foreground
