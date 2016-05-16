@@ -1,6 +1,6 @@
-#!/bin/sh -e
+#!/bin/bash -ex
 #
-# Copyright (c) 2012-2015 Robert Nelson <robertcnelson@gmail.com>
+# Copyright (c) 2012-2016 Robert Nelson <robertcnelson@gmail.com>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -72,7 +72,7 @@ check_defines () {
 	case "${deb_distribution}" in
 	debian)
 		deb_components=${deb_components:-"main contrib non-free"}
-		deb_mirror=${deb_mirror:-"ftp.us.debian.org/debian/"}
+		deb_mirror=${deb_mirror:-"httpredir.debian.org/debian/"}
 		;;
 	ubuntu)
 		deb_components=${deb_components:-"main universe multiverse"}
@@ -232,10 +232,10 @@ trap chroot_stopped EXIT
 check_defines
 
 if [ "x${host_arch}" != "xarmv7l" ] && [ "x${host_arch}" != "xaarch64" ] ; then
-	if [ "x${deb_arch}" == "xarmel" ] || [ "x${deb_arch}" == "xarmhf" ] ; then
+	if [ "x${deb_arch}" = "xarmel" ] || [ "x${deb_arch}" = "xarmhf" ] ; then
 		sudo cp $(which qemu-arm-static) "${tempdir}/usr/bin/"
 	fi
-	if [ "x${deb_arch}" == "xarm64" ] ; then
+	if [ "x${deb_arch}" = "xarm64" ] ; then
 		sudo cp $(which qemu-aarch64-static) "${tempdir}/usr/bin/"
 	fi
 fi
@@ -324,6 +324,10 @@ if [ "x${deb_distribution}" = "xdebian" ] ; then
 	#apt: make sure apt-cacher-ng doesn't break oracle-java8-installer
 	echo 'Acquire::http::Proxy::download.oracle.com "DIRECT";' > /tmp/03-proxy-oracle
 	sudo mv /tmp/03-proxy-oracle "${tempdir}/etc/apt/apt.conf.d/03-proxy-oracle"
+
+	#apt: make sure apt-cacher-ng doesn't break https repos
+	echo 'Acquire::http::Proxy::deb.nodesource.com "DIRECT";' > /tmp/03-proxy-https
+	sudo mv /tmp/03-proxy-https "${tempdir}/etc/apt/apt.conf.d/03-proxy-https"
 fi
 
 #set initial 'seed' time...
@@ -352,11 +356,11 @@ wheezy|jessie)
 	echo "#deb-src http://security.debian.org/ ${deb_codename}/updates ${deb_components}" >> ${wfile}
 	echo "" >> ${wfile}
 	if [ "x${chroot_enable_debian_backports}" = "xenable" ] ; then
-		echo "deb http://ftp.debian.org/debian ${deb_codename}-backports ${deb_components}" >> ${wfile}
-		echo "#deb-src http://ftp.debian.org/debian ${deb_codename}-backports ${deb_components}" >> ${wfile}
+		echo "deb http://httpredir.debian.org/debian ${deb_codename}-backports ${deb_components}" >> ${wfile}
+		echo "#deb-src http://httpredir.debian.org/debian ${deb_codename}-backports ${deb_components}" >> ${wfile}
 	else
-		echo "#deb http://ftp.debian.org/debian ${deb_codename}-backports ${deb_components}" >> ${wfile}
-		echo "##deb-src http://ftp.debian.org/debian ${deb_codename}-backports ${deb_components}" >> ${wfile}
+		echo "#deb http://httpredir.debian.org/debian ${deb_codename}-backports ${deb_components}" >> ${wfile}
+		echo "##deb-src http://httpredir.debian.org/debian ${deb_codename}-backports ${deb_components}" >> ${wfile}
 	fi
 	;;
 stretch)
@@ -371,6 +375,22 @@ if [ "x${repo_external}" = "xenable" ] ; then
 	echo "" >> ${wfile}
 	echo "deb [arch=${repo_external_arch}] ${repo_external_server} ${repo_external_dist} ${repo_external_components}" >> ${wfile}
 	echo "#deb-src [arch=${repo_external_arch}] ${repo_external_server} ${repo_external_dist} ${repo_external_components}" >> ${wfile}
+fi
+
+if [ "x${repo_flat}" = "xenable" ] ; then
+	echo "" >> ${wfile}
+	for component in "${repo_flat_components[@]}" ; do
+		echo "deb ${repo_flat_server} ${component}" >> ${wfile}
+		echo "#deb-src ${repo_flat_server} ${component}" >> ${wfile}
+	done
+fi
+
+if [ ! "x${repo_nodesource}" = "x" ] ; then
+	echo "" >> ${wfile}
+	echo "deb https://deb.nodesource.com/${repo_nodesource} ${deb_codename} main" >> ${wfile}
+	echo "#deb-src https://deb.nodesource.com/${repo_nodesource} ${deb_codename} main" >> ${wfile}
+	echo "" >> ${wfile}
+	sudo cp -v "${OIB_DIR}/target/keyring/nodesource.gpg.key" "${tempdir}/tmp/nodesource.gpg.key"
 fi
 
 if [ "x${repo_rcnee}" = "xenable" ] ; then
@@ -398,6 +418,12 @@ if [ "x${repo_external}" = "xenable" ] ; then
 	fi
 fi
 
+if [ "x${repo_flat}" = "xenable" ] ; then
+	if [ ! "x${repo_flat_key}" = "x" ] ; then
+		sudo cp -v "${OIB_DIR}/target/keyring/${repo_flat_key}" "${tempdir}/tmp/${repo_flat_key}"
+	fi
+fi
+
 if [ "${apt_proxy}" ] ; then
 	echo "Acquire::http::Proxy \"http://${apt_proxy}\";" > /tmp/apt.conf
 	sudo mv /tmp/apt.conf "${tempdir}/etc/apt/apt.conf"
@@ -411,9 +437,11 @@ echo "::1     localhost ip6-localhost ip6-loopback" >> /tmp/hosts
 echo "ff02::1 ip6-allnodes" >> /tmp/hosts
 echo "ff02::2 ip6-allrouters" >> /tmp/hosts
 sudo mv /tmp/hosts "${tempdir}/etc/hosts"
+sudo chown root:root "${tempdir}/etc/hosts"
 
 echo "${rfs_hostname}" > /tmp/hostname
 sudo mv /tmp/hostname "${tempdir}/etc/hostname"
+sudo chown root:root "${tempdir}/etc/hostname"
 
 if [ "x${deb_arch}" = "xarmhf" ] ; then
 	case "${deb_distribution}" in
@@ -421,15 +449,21 @@ if [ "x${deb_arch}" = "xarmhf" ] ; then
 		case "${deb_codename}" in
 		wheezy)
 			sudo cp "${OIB_DIR}/target/init_scripts/generic-${deb_distribution}.sh" "${tempdir}/etc/init.d/generic-boot-script.sh"
+			sudo chown root:root "${tempdir}/etc/init.d/generic-boot-script.sh"
 			sudo cp "${OIB_DIR}/target/init_scripts/capemgr-${deb_distribution}.sh" "${tempdir}/etc/init.d/capemgr.sh"
+			sudo chown root:root "${tempdir}/etc/init.d/capemgr.sh"
 			sudo cp "${OIB_DIR}/target/init_scripts/capemgr" "${tempdir}/etc/default/"
+			sudo chown root:root "${tempdir}/etc/default/capemgr"
 			distro="Debian"
 			;;
 		jessie|stretch)
 			#while bb-customizations installes "generic-board-startup.service" other boards/configs could use this default.
 			sudo cp "${OIB_DIR}/target/init_scripts/systemd-generic-board-startup.service" "${tempdir}/lib/systemd/system/generic-board-startup.service"
+			sudo chown root:root "${tempdir}/lib/systemd/system/generic-board-startup.service"
 			sudo cp "${OIB_DIR}/target/init_scripts/systemd-capemgr.service" "${tempdir}/lib/systemd/system/capemgr.service"
+			sudo chown root:root "${tempdir}/lib/systemd/system/capemgr.service"
 			sudo cp "${OIB_DIR}/target/init_scripts/capemgr" "${tempdir}/etc/default/"
+			sudo chown root:root "${tempdir}/etc/default/capemgr"
 			distro="Debian"
 			;;
 		esac
@@ -438,8 +472,11 @@ if [ "x${deb_arch}" = "xarmhf" ] ; then
 		case "${deb_codename}" in
 		trusty)
 			sudo cp "${OIB_DIR}/target/init_scripts/generic-${deb_distribution}.conf" "${tempdir}/etc/init/generic-boot-script.conf"
+			sudo chown root:root "${tempdir}/etc/init/generic-boot-script.conf"
 			sudo cp "${OIB_DIR}/target/init_scripts/capemgr-${deb_distribution}.sh" "${tempdir}/etc/init/capemgr.sh"
+			sudo chown root:root "${tempdir}/etc/init/capemgr.sh"
 			sudo cp "${OIB_DIR}/target/init_scripts/capemgr" "${tempdir}/etc/default/"
+			sudo chown root:root "${tempdir}/etc/default/capemgr"
 			distro="Ubuntu"
 
 			if [ -f "${tempdir}/etc/init/failsafe.conf" ] ; then
@@ -452,8 +489,11 @@ if [ "x${deb_arch}" = "xarmhf" ] ; then
 		vivid|wily|xenial)
 			#while bb-customizations installes "generic-board-startup.service" other boards/configs could use this default.
 			sudo cp "${OIB_DIR}/target/init_scripts/systemd-generic-board-startup.service" "${tempdir}/lib/systemd/system/generic-board-startup.service"
+			sudo chown root:root "${tempdir}/lib/systemd/system/generic-board-startup.service"
 			sudo cp "${OIB_DIR}/target/init_scripts/systemd-capemgr.service" "${tempdir}/lib/systemd/system/capemgr.service"
+			sudo chown root:root "${tempdir}/lib/systemd/system/generic-board-startup.service"
 			sudo cp "${OIB_DIR}/target/init_scripts/capemgr" "${tempdir}/etc/default/"
+			sudo chown root:root "${tempdir}/etc/default/capemgr"
 			distro="Ubuntu"
 			;;
 		esac
@@ -465,6 +505,8 @@ if [ -d "${tempdir}/usr/share/initramfs-tools/hooks/" ] ; then
 	if [ ! -f "${tempdir}/usr/share/initramfs-tools/hooks/dtbo" ] ; then
 		echo "log: adding: [initramfs-tools hook: dtbo]"
 		sudo cp "${OIB_DIR}/target/other/dtbo" "${tempdir}/usr/share/initramfs-tools/hooks/"
+		sudo chmod +x "${tempdir}/usr/share/initramfs-tools/hooks/dtbo"
+		sudo chown root:root "${tempdir}/usr/share/initramfs-tools/hooks/dtbo"
 	fi
 fi
 
@@ -475,11 +517,11 @@ echo "release_date=${time}" >> /tmp/rcn-ee.conf
 echo "third_party_modules=${third_party_modules}" >> /tmp/rcn-ee.conf
 echo "abi=${abi}" >> /tmp/rcn-ee.conf
 sudo mv /tmp/rcn-ee.conf "${tempdir}/etc/rcn-ee.conf"
+sudo chown root:root "${tempdir}/etc/rcn-ee.conf"
 
 #use /etc/dogtag for all:
 if [ ! "x${rfs_etc_dogtag}" = "x" ] ; then
-	echo "${rfs_etc_dogtag} ${time}" > /tmp/dogtag
-	sudo mv /tmp/dogtag "${tempdir}/etc/dogtag"
+	sudo sh -c "echo '${rfs_etc_dogtag} ${time}' > '${tempdir}/etc/dogtag'"
 fi
 
 cat > "${DIR}/chroot_script.sh" <<-__EOF__
@@ -531,6 +573,10 @@ cat > "${DIR}/chroot_script.sh" <<-__EOF__
 	}
 
 	install_pkg_updates () {
+		if [ -f /tmp/nodesource.gpg.key ] ; then
+			apt-key add /tmp/nodesource.gpg.key
+			rm -f /tmp/nodesource.gpg.key || true
+		fi
 		if [ "x${repo_rcnee}" = "xenable" ] ; then
 			apt-key add /tmp/repos.rcn-ee.net-archive-keyring.asc
 			rm -f /tmp/repos.rcn-ee.net-archive-keyring.asc || true
@@ -538,6 +584,10 @@ cat > "${DIR}/chroot_script.sh" <<-__EOF__
 		if [ "x${repo_external}" = "xenable" ] ; then
 			apt-key add /tmp/${repo_external_key}
 			rm -f /tmp/${repo_external_key} || true
+		fi
+		if [ "x${repo_flat}" = "xenable" ] ; then
+			apt-key add /tmp/${repo_flat_key}
+			rm -f /tmp/${repo_flat_key} || true
 		fi
 
 		apt-get update
@@ -579,6 +629,7 @@ cat > "${DIR}/chroot_script.sh" <<-__EOF__
 		if [ ! "x${repo_rcnee_pkg_version}" = "x" ] ; then
 			echo "Log: (chroot) Installing modules for: ${repo_rcnee_pkg_version}"
 			apt-get -y --force-yes install mt7601u-modules-${repo_rcnee_pkg_version} || true
+			apt-get -y --force-yes install rtl8723bu-modules-${repo_rcnee_pkg_version} || true
 			depmod -a ${repo_rcnee_pkg_version}
 			update-initramfs -u -k ${repo_rcnee_pkg_version}
 		fi
@@ -725,16 +776,20 @@ cat > "${DIR}/chroot_script.sh" <<-__EOF__
 		cat /etc/group | grep ^kmem || groupadd -r kmem || true
 		cat /etc/group | grep ^netdev || groupadd -r netdev || true
 		cat /etc/group | grep ^systemd-journal || groupadd -r systemd-journal || true
+		cat /etc/group | grep ^tisdk || groupadd -r tisdk || true
 		cat /etc/group | grep ^weston-launch || groupadd -r weston-launch || true
 		cat /etc/group | grep ^xenomai || groupadd -r xenomai || true
 
 		echo "KERNEL==\"hidraw*\", GROUP=\"plugdev\", MODE=\"0660\"" > /etc/udev/rules.d/50-hidraw.rules
 		echo "KERNEL==\"spidev*\", GROUP=\"spi\", MODE=\"0660\"" > /etc/udev/rules.d/50-spi.rules
 
-		echo "SUBSYSTEM==\"uio\", SYMLINK+=\"uio/%s{device/of_node/uio-alias}\"" > /etc/udev/rules.d/uio.rules
+		echo "#SUBSYSTEM==\"uio\", SYMLINK+=\"uio/%s{device/of_node/uio-alias}\"" > /etc/udev/rules.d/uio.rules
 		echo "SUBSYSTEM==\"uio\", GROUP=\"users\", MODE=\"0660\"" >> /etc/udev/rules.d/uio.rules
 
-		default_groups="admin,adm,dialout,i2c,kmem,spi,cdrom,floppy,audio,dip,video,netdev,plugdev,users,systemd-journal,weston-launch,xenomai"
+		echo "SUBSYSTEM==\"cmem\", GROUP=\"tisdk\", MODE=\"0660\"" > /etc/udev/rules.d/tisdk.rules
+		echo "SUBSYSTEM==\"rpmsg_rpc\", GROUP=\"tisdk\", MODE=\"0660\"" >> /etc/udev/rules.d/tisdk.rules
+
+		default_groups="admin,adm,dialout,i2c,kmem,spi,cdrom,floppy,audio,dip,video,netdev,plugdev,users,systemd-journal,tisdk,weston-launch,xenomai"
 
 		pkg="sudo"
 		dpkg_check
@@ -945,8 +1000,8 @@ if [ "x${include_firmware}" = "xenable" ] ; then
 		sudo cp -v "${DIR}"/git/linux-firmware/ti-connectivity/* "${tempdir}/lib/firmware/ti-connectivity"
 	fi
 
-	if [ -f "${DIR}/git/mt7601u/src/mcu/bin/MT7601.bin" ] ; then
-		sudo cp -v "${DIR}/git/mt7601u/src/mcu/bin/MT7601.bin" "${tempdir}/lib/firmware/mt7601u.bin"
+	if [ -f "${DIR}/git/linux-firmware/mt7601u.bin" ] ; then
+		sudo cp -v "${DIR}/git/linux-firmware/mt7601u.bin" "${tempdir}/lib/firmware/mt7601u.bin"
 	fi
 fi
 
@@ -954,14 +1009,14 @@ if [ -n "${early_chroot_script}" -a -r "${DIR}/target/chroot/${early_chroot_scri
 	report_size
 	echo "Calling early_chroot_script script: ${early_chroot_script}"
 	sudo cp -v "${DIR}/.project" "${tempdir}/etc/oib.project"
-	sudo /bin/sh -e "${DIR}/target/chroot/${early_chroot_script}" "${tempdir}"
+	sudo /bin/bash -e "${DIR}/target/chroot/${early_chroot_script}" "${tempdir}"
 	early_chroot_script=""
 	sudo rm -f "${tempdir}/etc/oib.project" || true
 fi
 
 chroot_mount
-sudo chroot "${tempdir}" /bin/sh -e chroot_script.sh
-echo "Log: Complete: [sudo chroot ${tempdir} /bin/sh -e chroot_script.sh]"
+sudo chroot "${tempdir}" /bin/bash -e chroot_script.sh
+echo "Log: Complete: [sudo chroot ${tempdir} /bin/bash -e chroot_script.sh]"
 
 #Do /etc/issue & /etc/issue.net after chroot_script:
 #
@@ -981,41 +1036,37 @@ echo "Log: Complete: [sudo chroot ${tempdir} /bin/sh -e chroot_script.sh]"
 
 if [ ! "x${rfs_console_banner}" = "x" ] || [ ! "x${rfs_console_user_pass}" = "x" ] ; then
 	echo "Log: setting up: /etc/issue"
-	wfile="/tmp/issue"
-	cat "${tempdir}/etc/issue" > ${wfile}
+	wfile="${tempdir}/etc/issue"
 	if [ ! "x${rfs_etc_dogtag}" = "x" ] ; then
-		cat "${tempdir}/etc/dogtag" >> ${wfile}
-		echo "" >> ${wfile}
+		sudo sh -c "cat '${tempdir}/etc/dogtag' >> ${wfile}"
+		sudo sh -c "echo '' >> ${wfile}"
 	fi
 	if [ ! "x${rfs_console_banner}" = "x" ] ; then
-		echo "${rfs_console_banner}" >> ${wfile}
-		echo "" >> ${wfile}
+		sudo sh -c "echo '${rfs_console_banner}' >> ${wfile}"
+		sudo sh -c "echo '' >> ${wfile}"
 	fi
 	if [ ! "x${rfs_console_user_pass}" = "x" ] ; then
-		echo "default username:password is [${rfs_username}:${rfs_password}]" >> ${wfile}
-		echo "" >> ${wfile}
+		sudo sh -c "echo 'default username:password is [${rfs_username}:${rfs_password}]' >> ${wfile}"
+		sudo sh -c "echo '' >> ${wfile}"
 	fi
-	sudo mv ${wfile} "${tempdir}/etc/issue"
 fi
 
 if [ ! "x${rfs_ssh_banner}" = "x" ] || [ ! "x${rfs_ssh_user_pass}" = "x" ] ; then
 	echo "Log: setting up: /etc/issue.net"
-	wfile="/tmp/issue.net"
-	cat "${tempdir}/etc/issue.net" > ${wfile}
-	echo "" >> ${wfile}
+	wfile="${tempdir}/etc/issue.net"
+	sudo sh -c "echo '' >> ${wfile}"
 	if [ ! "x${rfs_etc_dogtag}" = "x" ] ; then
-		cat "${tempdir}/etc/dogtag" >> ${wfile}
-		echo "" >> ${wfile}
+		sudo sh -c "cat '${tempdir}/etc/dogtag' >> ${wfile}"
+		sudo sh -c "echo '' >> ${wfile}"
 	fi
 	if [ ! "x${rfs_ssh_banner}" = "x" ] ; then
-		echo "${rfs_ssh_banner}" >> ${wfile}
-		echo "" >> ${wfile}
+		sudo sh -c "echo '${rfs_ssh_banner}' >> ${wfile}"
+		sudo sh -c "echo '' >> ${wfile}"
 	fi
 	if [ ! "x${rfs_ssh_user_pass}" = "x" ] ; then
-		echo "default username:password is [${rfs_username}:${rfs_password}]" >> ${wfile}
-		echo "" >> ${wfile}
+		sudo sh -c "echo 'default username:password is [${rfs_username}:${rfs_password}]' >> ${wfile}"
+		sudo sh -c "echo '' >> ${wfile}"
 	fi
-	sudo mv ${wfile} "${tempdir}/etc/issue.net"
 fi
 
 #usually a qemu failure...
@@ -1043,7 +1094,7 @@ if [ -n "${chroot_script}" -a -r "${DIR}/target/chroot/${chroot_script}" ] ; the
 	echo "Calling chroot_script script: ${chroot_script}"
 	sudo cp -v "${DIR}/.project" "${tempdir}/etc/oib.project"
 	sudo cp -v "${DIR}/target/chroot/${chroot_script}" "${tempdir}/final.sh"
-	sudo chroot "${tempdir}" /bin/sh -e final.sh
+	sudo chroot "${tempdir}" /bin/bash -e final.sh
 	sudo rm -f "${tempdir}/final.sh" || true
 	sudo rm -f "${tempdir}/etc/oib.project" || true
 	chroot_script=""
@@ -1063,7 +1114,7 @@ cp -v "${DIR}/.project" "${DIR}/deploy/${export_filename}/image-builder.project"
 
 if [ -n "${chroot_after_hook}" -a -r "${DIR}/${chroot_after_hook}" ] ; then
 	report_size
-	echo "Calling chroot_after_hook script: ${chroot_after_hook}"
+	echo "Calling chroot_after_hook script: ${DIR}/${chroot_after_hook}"
 	. "${DIR}/${chroot_after_hook}"
 	chroot_after_hook=""
 fi
@@ -1095,6 +1146,9 @@ cat > "${DIR}/cleanup_script.sh" <<-__EOF__
 		if [ -d /var/cache/ti-c6000-cgt-v8.0.x-installer/ ] ; then
 			rm -rf /var/cache/ti-c6000-cgt-v8.0.x-installer/ || true
 		fi
+		if [ -d /var/cache/ti-c6000-cgt-v8.1.x-installer/ ] ; then
+			rm -rf /var/cache/ti-c6000-cgt-v8.1.x-installer/ || true
+		fi
 		if [ -d /var/cache/ti-pru-cgt-installer/ ] ; then
 			rm -rf /var/cache/ti-pru-cgt-installer/ || true
 		fi
@@ -1120,14 +1174,15 @@ __EOF__
 
 ###MUST BE LAST...
 sudo mv "${DIR}/cleanup_script.sh" "${tempdir}/cleanup_script.sh"
-sudo chroot "${tempdir}" /bin/sh -e cleanup_script.sh
-echo "Log: Complete: [sudo chroot ${tempdir} /bin/sh -e cleanup_script.sh]"
+sudo chroot "${tempdir}" /bin/bash -e cleanup_script.sh
+echo "Log: Complete: [sudo chroot ${tempdir} /bin/bash -e cleanup_script.sh]"
 
 #add /boot/uEnv.txt update script
 if [ -d "${tempdir}/etc/kernel/postinst.d/" ] ; then
 	if [ ! -f "${tempdir}/etc/kernel/postinst.d/zz-uenv_txt" ] ; then
 		sudo cp -v "${OIB_DIR}/target/other/zz-uenv_txt" "${tempdir}/etc/kernel/postinst.d/"
 		sudo chmod +x "${tempdir}/etc/kernel/postinst.d/zz-uenv_txt"
+		sudo chown root:root "${tempdir}/etc/kernel/postinst.d/zz-uenv_txt"
 	fi
 fi
 
@@ -1152,6 +1207,7 @@ fi
 #ID.txt:
 if [ -f "${tempdir}/etc/dogtag" ] ; then
 	sudo cp "${tempdir}/etc/dogtag" "${DIR}/deploy/${export_filename}/ID.txt"
+	sudo chown root:root "${DIR}/deploy/${export_filename}/ID.txt"
 fi
 
 report_size
@@ -1187,10 +1243,10 @@ else
 	sudo LANG=C tar --numeric-owner -cf "${DIR}/deploy/${export_filename}/${deb_arch}-rootfs-${deb_distribution}-${deb_codename}.tar" .
 	cd "${DIR}/" || true
 	ls -lh "${DIR}/deploy/${export_filename}/${deb_arch}-rootfs-${deb_distribution}-${deb_codename}.tar"
+	sudo chown -R ${USER}:${USER} "${DIR}/deploy/${export_filename}/"
 fi
 
 echo "Log: USER:${USER}"
-sudo chown -R ${USER}:${USER} "${DIR}/deploy/${export_filename}/"
 
 if [ "x${chroot_tarball}" = "xenable" ] ; then
 	echo "Creating: ${export_filename}.tar"
