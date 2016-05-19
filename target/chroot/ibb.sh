@@ -22,7 +22,7 @@
 
 export LC_ALL=C
 
-u_boot_release="v2015.10-rc4"
+u_boot_release="v2016.03"
 
 #contains: rfs_username, release_date
 if [ -f /etc/rcn-ee.conf ] ; then
@@ -71,22 +71,42 @@ git_clone_branch () {
 	echo "${git_target_dir} : ${git_repo}" >> /opt/source/list.txt
 }
 
+git_clone_full () {
+	mkdir -p ${git_target_dir} || true
+	qemu_command="git clone ${git_repo} ${git_target_dir} || true"
+	qemu_warning
+	git clone ${git_repo} ${git_target_dir} || true
+	sync
+	echo "${git_target_dir} : ${git_repo}" >> /opt/source/list.txt
+}
+
+setup_system () {
+	echo "" >> /etc/securetty
+	echo "#USB Gadget Serial Port" >> /etc/securetty
+	echo "ttyGS0" >> /etc/securetty
+
+	cp /usr/share/zoneinfo/Europe/Berlin /etc/localtime
+}
+
 install_git_repos () {
 	git_repo="https://github.com/RobertCNelson/dtb-rebuilder.git"
-	git_branch="4.1-ti"
+	git_branch="4.4-ti"
 	git_target_dir="/opt/source/dtb-${git_branch}"
 	git_clone_branch
 
-	git_repo="https://github.com/robert-budde/bb.org-overlays"
+	git_repo="https://github.com/beagleboard/bb.org-overlays"
 	git_target_dir="/opt/source/bb.org-overlays"
 	git_clone
 	if [ -f ${git_target_dir}/.git/config ] ; then
 		cd ${git_target_dir}/
 		if [ ! "x${repo_rcnee_pkg_version}" = "x" ] ; then
-			is_kernel=$(echo ${repo_rcnee_pkg_version} | grep 4.1)
+			is_kernel=$(echo ${repo_rcnee_pkg_version} | grep 4.1 || true)
 			if [ ! "x${is_kernel}" = "x" ] ; then
 				if [ -f /usr/bin/make ] ; then
-					./dtc-overlay.sh
+					#just for trusty, 14.04... drop with xenial...
+					if [ ! -f /usr/bin/dtc-v4.1.x ] ; then
+						./dtc-overlay.sh
+					fi
 					make
 					make install
 					update-initramfs -u -k ${repo_rcnee_pkg_version}
@@ -98,33 +118,12 @@ install_git_repos () {
 	fi
 }
 
-setup_system () {
-	#For when sed/grep/etc just gets way to complex...
-	cd /
-	if [ -f /opt/scripts/mods/debian-add-sbin-usr-sbin-to-default-path.diff ] ; then
-		if [ -f /usr/bin/patch ] ; then
-			echo "Patching: /etc/profile"
-			patch -p1 < /opt/scripts/mods/debian-add-sbin-usr-sbin-to-default-path.diff
-		fi
-	fi
-
-	if [ -f /lib/systemd/system/serial-getty@.service ] ; then
-		cp /lib/systemd/system/serial-getty@.service /etc/systemd/system/serial-getty@ttyGS0.service
-		ln -s /etc/systemd/system/serial-getty@ttyGS0.service /etc/systemd/system/getty.target.wants/serial-getty@ttyGS0.service
-
-		echo "" >> /etc/securetty
-		echo "#USB Gadget Serial Port" >> /etc/securetty
-		echo "ttyGS0" >> /etc/securetty
-	fi
-
-	cp /usr/share/zoneinfo/Europe/Berlin /etc/localtime
-}
-
 install_pip3_pkgs () {
 	if [ -f /usr/bin/pip3 ] ; then
 		echo "Installing pip3 packages"
 
 		pip3 install ephem
+		pip3 install pyyaml
 		pip3 install --pre pyusb
 
 		#wget http://downloads.sourceforge.net/project/pyusb/PyUSB%201.0/1.0.0-beta-2/pyusb-1.0.0b2.tar.gz
@@ -171,6 +170,7 @@ install_eibd () {
 install_knxd () {
 	echo "Installing knxd"
 
+	cd /
 	# knxd requires libpthsem which unfortunately isn't part of Debian
 	pthver="2.0.8"
 	wget https://www.auto.tuwien.ac.at/~mkoegler/pth/pthsem_${pthver}.tar.gz
@@ -197,7 +197,7 @@ install_knxd () {
 	rm -rf knxd* || true
 
 	# customize systemd config
-	sed -i -e 's:KNXD_OPTS=\".*\":KNXD_OPTS=\"--GroupCache --Discovery --Routing --Tunnelling --Server --tpuarts-ack-all-group --layer2=tpuarts\:/dev/ttyS2\":g' /etc/knxd.conf
+	sed -i -e 's:KNXD_OPTS=\".*\":KNXD_OPTS=\"--GroupCache -D -R -T -S --tpuarts-ack-all-group --tpuarts-ack-all-individual --layer2=tpuarts\:/dev/ttyS2\":g' /etc/knxd.conf
 
 	# add knxd to dialout group to allow access to tty
 	usermod -a -G dialout knxd
@@ -286,6 +286,92 @@ install_smarthome_py_develop () {
 
 		[Install]
 		WantedBy=multi-user.target
+	EOF
+	systemctl enable smarthome.service
+}
+
+install_smarthomeNG_develop () {
+	echo "Cloning smarthomeNG git repository (branch: develop)"
+	mkdir -p /usr/local
+	cd /usr/local
+	git_repo="https://github.com/smarthomeNG/smarthome.git"
+	git_target_dir="smarthome"
+	git_branch="master"
+	git_clone_branch
+
+	echo "Setting ownership for smarthomeNG"
+	chown -R smarthome:smarthome smarthome
+
+	echo "Configuring smarthomeNG"
+	cd smarthome/etc
+	touch logic.conf
+	cat > smarthome.conf <<- 'EOF'
+		# smarthome.conf
+		lat = 51.514167
+		lon = 7.433889
+		elev = 500
+		tz = 'Europe/Berlin'
+	EOF
+
+	cat > plugin.conf <<- 'EOF'
+		# plugin.conf
+		[knx]
+		    class_name = KNX
+		    class_path = plugins.knx
+		    host = 127.0.0.1
+		    port = 6720
+		#    send_time = 600 # update date/time every 600 seconds, default none
+		#    time_ga = 1/1/1 # default none
+		#    date_ga = 1/1/2 # default none
+		    busmonitor = yes
+		[visu]
+		    class_name = WebSocket
+		    class_path = plugins.visu
+		    smartvisu_dir = /var/www/html/smartVISU
+		    acl = rw
+		[sql]
+		    class_name = SQL
+		    class_path = plugins.sqlite
+		[ow]
+		    class_name = OneWire
+		    class_path = plugins.onewire
+		    host = 127.0.0.1
+		    port = 4304
+		[enocean]
+		    class_name = EnOcean
+		    class_path = plugins.enocean
+		    serialport = /dev/ttyS4
+		#[dlms]
+		#    class_name = DLMS
+		#    class_path = plugins.dlms
+		#    serialport = /dev/ttyS1
+		#    update_cycle = 20
+		#    use_checksum = True
+		#    reset_baudrate = False
+		#    no_waiting = True
+		[cli]
+		    class_name = CLI
+		    class_path = plugins.cli
+		    ip = 0.0.0.0
+		    update = True
+	EOF
+
+	echo "Installing smarthomeNG systemd service"
+	mkdir -p /etc/systemd/system
+	cat > /etc/systemd/system/smarthome.service <<- 'EOF'
+		[Unit]
+		Description=smarthomeNG daemon
+		After=network.target knxd.service owserver.service
+
+		[Service]
+		Type=forking
+		ExecStart=/usr/bin/python3 /usr/local/smarthome/bin/smarthome.py
+		User=smarthome
+		PIDFile=/usr/local/smarthome/var/run/smarthome.pid
+		Restart=on-abort
+
+		[Install]
+		WantedBy=default.target
 	EOF
 	systemctl enable smarthome.service
 }
@@ -390,7 +476,8 @@ install_knxd
 
 install_pip3_pkgs
 
-install_smarthome_py_develop
+install_smarthomeNG_develop
+#install_smarthome_py_develop
 
 install_smartvisu
 
