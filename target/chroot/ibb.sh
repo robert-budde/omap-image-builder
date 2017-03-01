@@ -1,6 +1,6 @@
 #!/bin/sh -e
 #
-# Copyright (c) 2015 Robert Budde <robert.budde@ing-budde.de>
+# Copyright (c) 2015-2017 Robert Budde <robert.budde@ing-budde.de>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -22,7 +22,7 @@
 
 export LC_ALL=C
 
-u_boot_release="v2016.03"
+u_boot_release="v2017.03-rc3"
 
 #contains: rfs_username, release_date
 if [ -f /etc/rcn-ee.conf ] ; then
@@ -81,6 +81,15 @@ git_clone_full () {
 }
 
 setup_system () {
+	#For when sed/grep/etc just gets way to complex...
+	cd /
+	if [ -f /opt/scripts/mods/debian-add-sbin-usr-sbin-to-default-path.diff ] ; then
+		if [ -f /usr/bin/patch ] ; then
+			echo "Patching: /etc/profile"
+			patch -p1 < /opt/scripts/mods/debian-add-sbin-usr-sbin-to-default-path.diff
+		fi
+	fi
+
 	echo "" >> /etc/securetty
 	echo "#USB Gadget Serial Port" >> /etc/securetty
 	echo "ttyGS0" >> /etc/securetty
@@ -89,9 +98,27 @@ setup_system () {
 }
 
 install_git_repos () {
+	git_repo="https://github.com/strahlex/BBIOConfig.git"
+	git_target_dir="/opt/source/BBIOConfig"
+	git_clone
+
+	#am335x-pru-package
+	if [ -f /usr/include/prussdrv.h ] ; then
+		git_repo="https://github.com/biocode3D/prufh.git"
+		git_target_dir="/opt/source/prufh"
+		git_clone
+		if [ -f ${git_target_dir}/.git/config ] ; then
+			cd ${git_target_dir}/
+			if [ -f /usr/bin/make ] ; then
+				make LIBDIR_APP_LOADER=/usr/lib/ INCDIR_APP_LOADER=/usr/include
+			fi
+			cd /
+		fi
+	fi
+
 	git_repo="https://github.com/RobertCNelson/dtb-rebuilder.git"
-	git_branch="4.4-ti"
-	git_target_dir="/opt/source/dtb-${git_branch}"
+	git_target_dir="/opt/source/dtb-4.9-ti"
+	git_branch="4.9-ti"
 	git_clone_branch
 
 	git_repo="https://github.com/beagleboard/bb.org-overlays"
@@ -100,18 +127,15 @@ install_git_repos () {
 	if [ -f ${git_target_dir}/.git/config ] ; then
 		cd ${git_target_dir}/
 		if [ ! "x${repo_rcnee_pkg_version}" = "x" ] ; then
-			is_kernel=$(echo ${repo_rcnee_pkg_version} | grep 4.1 || true)
-			if [ ! "x${is_kernel}" = "x" ] ; then
+			is_kernel=$(echo ${repo_rcnee_pkg_version} | grep 3.8.13 || true)
+			if [ "x${is_kernel}" = "x" ] ; then
 				if [ -f /usr/bin/make ] ; then
-					#just for trusty, 14.04... drop with xenial...
-					if [ ! -f /usr/bin/dtc-v4.1.x ] ; then
-						./dtc-overlay.sh
+					if [ ! -f /lib/firmware/BB-ADC-00A0.dtbo ] ; then
+						make
+						make install
+						make clean
 					fi
-					make
-					make install
 					update-initramfs -u -k ${repo_rcnee_pkg_version}
-					rm -rf /home/${rfs_username}/git/ || true
-					make clean
 				fi
 			fi
 		fi
@@ -124,70 +148,19 @@ install_pip3_pkgs () {
 
 		pip3 install ephem
 		pip3 install pyyaml
-		pip3 install --pre pyusb
-
-		#wget http://downloads.sourceforge.net/project/pyusb/PyUSB%201.0/1.0.0-beta-2/pyusb-1.0.0b2.tar.gz
-		#tar -xzvf pyusb-1.0.0b2.tar.gz
-		#cd pyusb-1.0.0b2/
-		#sudo python3 setup.py install
-		#cd ..
-		#rm -rf pyusb-1.0.0b2* || true
+		pip3 install pyusb
 	fi
-}
-
-install_eibd () {
-	# should be a repo...
-	echo "Installing eibd packages"
-	url="http://www.ing-budde.de/downloads/eibd"
-	eibd_debs="libpthsem20_2.0.8_armhf.deb eibd-server_0.0.5_armhf.deb \
-		libeibclient0_0.0.5_armhf.deb eibd-clients_0.0.5_armhf.deb"
-	for deb in ${eibd_debs}; do
-		wget ${url}/${deb}
-		dpkg -i ${deb}
-		rm ${deb}
-	done
-
-	echo "Installing eibd systemd service"
-	mkdir -p /etc/systemd/system
-	cat > /etc/systemd/system/eibd.service <<- 'EOF'
-		[Unit]
-		Description=eibd KNX daemon
-		After=network.target network-online.target connman.service avahi-daemon.service
-
-		[Service]
-		ExecStart=/usr/bin/eibd --eibaddr 1.1.0 --GroupCache --Server --Routing --Tunnelling --Discovery --tpuarts-ack-all-group --listen-tcp --listen-local tpuarts:/dev/ttyS2
-		Restart=on-failure
-		RestartSec=5
-		User=smarthome
-		Group=smarthome
-
-		[Install]
-		WantedBy=multi-user.target
-	EOF
-	systemctl enable eibd.service
 }
 
 install_knxd () {
 	echo "Installing knxd"
 
 	cd /
-	# knxd requires libpthsem which unfortunately isn't part of Debian
-	pthver="2.0.8"
-	wget https://www.auto.tuwien.ac.at/~mkoegler/pth/pthsem_${pthver}.tar.gz
-	tar xzf pthsem_${pthver}.tar.gz
-	cd pthsem-${pthver}
-	dpkg-buildpackage -b -uc
-	cd ..
-	sudo dpkg -i libpthsem*.deb
-
-	# clean-up
-	rm -rf pthsem* || true
-	rm -f libpthsem* || true
-
 	# now build+install knxd itself
 	git_repo="https://github.com/knxd/knxd.git"
 	git_target_dir="knxd"
-	git_clone
+	git_branch="stable"
+	git_clone_branch
 	cd knxd
 	dpkg-buildpackage -b -uc
 	cd ..
@@ -197,97 +170,10 @@ install_knxd () {
 	rm -rf knxd* || true
 
 	# customize systemd config
-	sed -i -e 's:KNXD_OPTS=\".*\":KNXD_OPTS=\"--GroupCache -D -R -T -S --tpuarts-ack-all-group --tpuarts-ack-all-individual --layer2=tpuarts\:/dev/ttyS2\":g' /etc/knxd.conf
+	sed -i -e 's:KNXD_OPTS=\".*\":KNXD_OPTS=\"-e 0.0.1 -E 0.0.2:8 --GroupCache -D -R -T -S --tpuarts-ack-all-group --tpuarts-ack-all-individual --layer2=tpuarts\:/dev/ttyS2\":g' /etc/knxd.conf
 
 	# add knxd to dialout group to allow access to tty
 	usermod -a -G dialout knxd
-}
-
-install_smarthome_py_develop () {
-	echo "Cloning smarthome.py git repository (branch: develop)"
-	mkdir -p /usr/local
-	cd /usr/local
-	git_repo="http://github.com/robert-budde/smarthome.git"
-	git_target_dir="smarthome"
-	git_branch="develop"
-	git_clone_branch
-
-	echo "Setting ownership for smarthome.py"
-	chown -R smarthome:smarthome smarthome
-
-	echo "Configuring smarthome.py"
-	cd smarthome/etc
-	touch logic.conf
-	cat > smarthome.conf <<- 'EOF'
-		# smarthome.conf
-		lat = 51.514167
-		lon = 7.433889
-		elev = 500
-		tz = 'Europe/Berlin'
-		item_change_log = yes
-	EOF
-
-	cat > plugin.conf <<- 'EOF'
-		# plugin.conf
-		[knx]
-		    class_name = KNX
-		    class_path = plugins.knx
-		    host = 127.0.0.1
-		    port = 6720
-		#    send_time = 600 # update date/time every 600 seconds, default none
-		#    time_ga = 1/1/1 # default none
-		#    date_ga = 1/1/2 # default none
-		    busmonitor = yes
-		[visu]
-		    class_name = WebSocket
-		    class_path = plugins.visu
-		    smartvisu_dir = /var/www/html/smartVISU
-		    acl = rw
-		[sql]
-		    class_name = SQL
-		    class_path = plugins.sqlite
-		[ow]
-		    class_name = OneWire
-		    class_path = plugins.onewire
-		    host = 127.0.0.1
-		    port = 4304
-		[enocean]
-		    class_name = EnOcean
-		    class_path = plugins.enocean
-		    serialport = /dev/ttyS4
-		#[dlms]
-		#    class_name = DLMS
-		#    class_path = plugins.dlms
-		#    serialport = /dev/ttyS1
-		#    update_cycle = 20
-		#    use_checksum = True
-		#    reset_baudrate = False
-		#    no_waiting = True
-		[cli]
-		    class_name = CLI
-		    class_path = plugins.cli
-		    ip = 0.0.0.0
-		    update = True
-	EOF
-
-	echo "Installing smarthome.py systemd service"
-	mkdir -p /etc/systemd/system
-	cat > /etc/systemd/system/smarthome.service <<- 'EOF'
-		[Unit]
-		Description=SmartHome.py
-		After=knxd.service owserver.service
-		Restart=on-failure
-		RestartSec=10
-
-		[Service]
-		ExecStart=/usr/bin/python3 /usr/local/smarthome/bin/smarthome.py --foreground
-		User=smarthome
-		Group=smarthome
-
-		[Install]
-		WantedBy=multi-user.target
-	EOF
-	systemctl enable smarthome.service
 }
 
 install_smarthomeNG_develop () {
@@ -296,7 +182,7 @@ install_smarthomeNG_develop () {
 	cd /usr/local
 	git_repo="https://github.com/smarthomeNG/smarthome.git"
 	git_target_dir="smarthome"
-	git_branch="master"
+	git_branch="release-1.3"
 	git_clone_branch
 
 	echo "Setting ownership for smarthomeNG"
@@ -324,19 +210,26 @@ install_smarthomeNG_develop () {
 		#    time_ga = 1/1/1 # default none
 		#    date_ga = 1/1/2 # default none
 		    busmonitor = yes
-		[visu]
-		    class_name = WebSocket
-		    class_path = plugins.visu
-		    smartvisu_dir = /var/www/html/smartVISU
-		    acl = rw
-		[sql]
-		    class_name = SQL
-		    class_path = plugins.sqlite
 		[ow]
 		    class_name = OneWire
 		    class_path = plugins.onewire
 		    host = 127.0.0.1
 		    port = 4304
+		[visu]
+		    class_name = WebSocket
+		    class_path = plugins.visu_websocket
+		[smartvisu]
+		    class_name = SmartVisu
+		    class_path = plugins.visu_smartvisu
+		    smartvisu_dir = /var/www/html/smartVISU
+		[cli]
+		    class_name = CLI
+		    class_path = plugins.cli
+		    ip = 0.0.0.0
+		    update = True
+		[sql]
+		    class_name = SQL
+		    class_path = plugins.sqlite
 		[enocean]
 		    class_name = EnOcean
 		    class_path = plugins.enocean
@@ -349,11 +242,6 @@ install_smarthomeNG_develop () {
 		#    use_checksum = True
 		#    reset_baudrate = False
 		#    no_waiting = True
-		[cli]
-		    class_name = CLI
-		    class_path = plugins.cli
-		    ip = 0.0.0.0
-		    update = True
 	EOF
 
 	echo "Installing smarthomeNG systemd service"
@@ -381,9 +269,10 @@ install_smartvisu () {
 	cd /var/www/html
 	rm -f index.html || true
 
-	git_repo="http://github.com/robert-budde/smartvisu.git"
+	git_repo="https://github.com/Martin-Gleiss/smartvisu.git"
 	git_target_dir="smartVISU"
-	git_clone
+	git_branch="develop"
+	git_clone_branch
 
 	echo "Setting ownership for smartVISU"
 	chown -R www-data:www-data smartVISU
@@ -441,27 +330,37 @@ customize_owfs_systemd_services () {
 	systemctl enable owhttpd.service
 }
 
-unsecure_root () {
-	root_password=$(cat /etc/shadow | grep root | awk -F ':' '{print $2}')
-	sed -i -e 's:'$root_password'::g' /etc/shadow
+other_source_links () {
+	rcn_https="https://rcn-ee.com/repos/git/u-boot-patches"
 
-	if [ -f /etc/ssh/sshd_config ] ; then
-		#Make ssh root@beaglebone work..
-		sed -i -e 's:PermitEmptyPasswords no:PermitEmptyPasswords yes:g' /etc/ssh/sshd_config
-		sed -i -e 's:UsePAM yes:UsePAM no:g' /etc/ssh/sshd_config
-		#Starting with Jessie:
-		sed -i -e 's:PermitRootLogin without-password:PermitRootLogin yes:g' /etc/ssh/sshd_config
-	fi
+	mkdir -p /opt/source/u-boot_${u_boot_release}/
+	wget --directory-prefix="/opt/source/u-boot_${u_boot_release}/" ${rcn_https}/${u_boot_release}/0001-omap3_beagle-uEnv.txt-bootz-n-fixes.patch
+	wget --directory-prefix="/opt/source/u-boot_${u_boot_release}/" ${rcn_https}/${u_boot_release}/0001-am335x_evm-uEnv.txt-bootz-n-fixes.patch
+	wget --directory-prefix="/opt/source/u-boot_${u_boot_release}/" ${rcn_https}/${u_boot_release}/0002-U-Boot-BeagleBone-Cape-Manager.patch
 
-	if [ -f /etc/sudoers ] ; then
-		#Don't require password for sudo access
-		echo "${rfs_username}  ALL=NOPASSWD: ALL" >>/etc/sudoers
-	fi
+	echo "u-boot_${u_boot_release} : /opt/source/u-boot_${u_boot_release}" >> /opt/source/list.txt
+
+	chown -R ${rfs_username}:${rfs_username} /opt/source/
 }
 
-is_this_qemu
+unsecure_root () {
+#	root_password=$(cat /etc/shadow | grep root | awk -F ':' '{print $2}')
+#	sed -i -e 's:'$root_password'::g' /etc/shadow
 
-setup_system
+#	if [ -f /etc/ssh/sshd_config ] ; then
+#		#Make ssh root@beaglebone work..
+#		sed -i -e 's:PermitEmptyPasswords no:PermitEmptyPasswords yes:g' /etc/ssh/sshd_config
+#		sed -i -e 's:UsePAM yes:UsePAM no:g' /etc/ssh/sshd_config
+#		#Starting with Jessie:
+#		sed -i -e 's:PermitRootLogin without-password:PermitRootLogin yes:g' /etc/ssh/sshd_config
+#	fi
+
+	if [ -d /etc/sudoers.d/ ] ; then
+		#Don't require password for sudo access
+		echo "${rfs_username} ALL=NOPASSWD: ALL" >/etc/sudoers.d/${rfs_username}
+		chmod 0440 /etc/sudoers.d/${rfs_username}
+	fi
+}
 
 if [ -f /usr/bin/git ] ; then
 	git config --global user.email "${rfs_username}@example.com"
@@ -472,16 +371,16 @@ if [ -f /usr/bin/git ] ; then
 fi
 
 install_knxd
-#install_eibd
 
 install_pip3_pkgs
 
 install_smarthomeNG_develop
-#install_smarthome_py_develop
 
 install_smartvisu
 
 customize_owfs_systemd_services
 
+other_source_links
 #unsecure_root
+#
 
