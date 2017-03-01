@@ -16,13 +16,13 @@ fi
 #./RootStock-NG.sh -c bb.org-debian-jessie-lxqt-2gb-v4.1
 #./RootStock-NG.sh -c bb.org-debian-jessie-lxqt-4gb-v4.1
 ./RootStock-NG.sh -c bb.org-debian-jessie-console-v4.1
-#./RootStock-NG.sh -c bb.org-debian-jessie-usbflasher
+#./RootStock-NG.sh -c bb.org-debian-jessie-oemflasher
 
-debian_wheezy_machinekit="debian-7.10-machinekit-armhf-${time}"
-debian_jessie_lxqt_2gb="debian-8.4-lxqt-2gb-armhf-${time}"
-debian_jessie_lxqt_4gb="debian-8.4-lxqt-4gb-armhf-${time}"
-debian_jessie_console="debian-8.4-console-armhf-${time}"
-debian_jessie_usbflasher="debian-8.4-usbflasher-armhf-${time}"
+debian_wheezy_machinekit="debian-7.11-machinekit-armhf-${time}"
+  debian_jessie_lxqt_2gb="debian-8.7-lxqt-2gb-armhf-${time}"
+  debian_jessie_lxqt_4gb="debian-8.7-lxqt-4gb-armhf-${time}"
+   debian_jessie_console="debian-8.7-console-armhf-${time}"
+debian_jessie_oemflasher="debian-8.7-oemflasher-armhf-${time}"
 
 archive="xz -z -8"
 
@@ -36,9 +36,6 @@ beaglebone_console="--dtb beaglebone --bbb-old-bootloader-in-emmc \
 
 bb_blank_flasher_console="--dtb bbb-blank-eeprom --bbb-old-bootloader-in-emmc \
 --hostname beaglebone --enable-cape-universal"
-
-arduino_tre="--dtb am335x-arduino-tre --boot_label ARDUINO-TRE \
---rootfs_label rootfs --hostname arduino-tre"
 
 omap3_beagle_xm="--dtb omap3-beagle-xm --hostname BeagleBoard"
 omap5_uevm="--dtb omap5-uevm --hostname omap5-uevm"
@@ -93,12 +90,15 @@ copy_img_to_mirror () {
                 fi
                 if [ -d ${mirror_dir}/${time}/\${blend}/ ] ; then
                         if [ -f \${wfile}.bmap ] ; then
-                                cp -v \${wfile}.bmap ${mirror_dir}/${time}/\${blend}/
+                                mv -v \${wfile}.bmap ${mirror_dir}/${time}/\${blend}/
+                                sync
                         fi
                         if [ ! -f ${mirror_dir}/${time}/\${blend}/\${wfile}.img.zx ] ; then
-                                cp -v \${wfile}.img ${mirror_dir}/${time}/\${blend}/
+                                mv -v \${wfile}.img ${mirror_dir}/${time}/\${blend}/
+                                sync
                                 if [ -f \${wfile}.img.xz.job.txt ] ; then
-                                        cp -v \${wfile}.img.xz.job.txt ${mirror_dir}/${time}/\${blend}/
+                                        mv -v \${wfile}.img.xz.job.txt ${mirror_dir}/${time}/\${blend}/
+                                        sync
                                 fi
                                 cd ${mirror_dir}/${time}/\${blend}/
                                 ${archive} \${wfile}.img && sha256sum \${wfile}.img.xz > \${wfile}.img.xz.sha256sum &
@@ -123,8 +123,10 @@ generate_img () {
         if [ -d \${base_rootfs}/ ] ; then
                 cd \${base_rootfs}/
                 sudo ./setup_sdcard.sh \${options}
-                mv *.img ../
-                mv *.job.txt ../
+                sudo chown 1000:1000 *.img || true
+                sudo chown 1000:1000 *.job.txt || true
+                mv *.img ../ || true
+                mv *.job.txt ../ || true
                 cd ..
         fi
 }
@@ -142,7 +144,6 @@ options="--img-4gb bone-\${base_rootfs} ${beaglebone}" ; generate_img
 options="--img-4gb bbx15-eMMC-flasher-\${base_rootfs} ${am57xx_beagle_x15} --emmc-flasher" ; generate_img
 options="--img-4gb bbx15-\${base_rootfs} ${am57xx_beagle_x15}" ; generate_img
 options="--img-4gb omap5-uevm-\${base_rootfs} ${omap5_uevm}" ; generate_img
-options="--img-4gb tre-\${base_rootfs} ${arduino_tre}" ; generate_img
 
 ###lxqt-2gb image
 base_rootfs="${debian_jessie_lxqt_2gb}" ; blend="lxqt-2gb" ; extract_base_rootfs
@@ -159,8 +160,8 @@ options="--img-2gb a335-eeprom-\${base_rootfs} ${bb_blank_flasher_console} --a33
 #options="--img-2gb bbx15-\${base_rootfs} ${am57xx_beagle_x15}" ; generate_img
 #options="--img-2gb omap5-uevm-\${base_rootfs} ${omap5_uevm}" ; generate_img
 
-###usbflasher images: (also single partition)
-base_rootfs="${debian_jessie_usbflasher}" ; blend="usbflasher" ; extract_base_rootfs
+###oemflasher images: (also single partition)
+base_rootfs="${debian_jessie_oemflasher}" ; blend="oemflasher" ; extract_base_rootfs
 
 options="--img-2gb BBB-blank-\${base_rootfs} --dtb bbb-blank-eeprom --bbb-old-bootloader-in-emmc --hostname beaglebone --usb-flasher" ; generate_img
 options="--img-2gb bbx15-\${base_rootfs} --dtb am57xx-beagle-x15 --hostname BeagleBoard-X15 --usb-flasher" ; generate_img
@@ -170,7 +171,7 @@ base_rootfs="${debian_wheezy_machinekit}" ; blend="machinekit" ; archive_base_ro
 base_rootfs="${debian_jessie_lxqt_4gb}" ; blend="lxqt-4gb" ; archive_base_rootfs
 base_rootfs="${debian_jessie_lxqt_2gb}" ; blend="lxqt-2gb" ; archive_base_rootfs
 base_rootfs="${debian_jessie_console}" ; blend="console" ; archive_base_rootfs
-base_rootfs="${debian_jessie_usbflasher}" ; blend="usbflasher" ; archive_base_rootfs
+base_rootfs="${debian_jessie_oemflasher}" ; blend="oemflasher" ; archive_base_rootfs
 
 ###archive *.img
 base_rootfs="${debian_wheezy_machinekit}" ; blend="machinekit"
@@ -203,7 +204,7 @@ wfile="bbx15-\${base_rootfs}-2gb" ; archive_img
 wfile="omap5-uevm-\${base_rootfs}-2gb" ; archive_img
 
 #
-base_rootfs="${debian_jessie_usbflasher}" ; blend="usbflasher"
+base_rootfs="${debian_jessie_oemflasher}" ; blend="oemflasher"
 
 wfile="BBB-blank-\${base_rootfs}-2gb" ; archive_img
 wfile="bbx15-\${base_rootfs}-2gb" ; archive_img
@@ -218,9 +219,9 @@ if [ ! -d /mnt/farm/images/ ] ; then
 fi
 
 if [ -d /mnt/farm/images/ ] ; then
-	mkdir /mnt/farm/images/${time}/
-	cp -v ${DIR}/deploy/*.tar /mnt/farm/images/${time}/
-	cp -v ${DIR}/deploy/gift_wrap_final_images.sh /mnt/farm/images/${time}/gift_wrap_final_images.sh
-	chmod +x /mnt/farm/images/${time}/gift_wrap_final_images.sh
+	mkdir /mnt/farm/images/bb.org-${time}/
+	cp -v ${DIR}/deploy/*.tar /mnt/farm/images/bb.org-${time}/
+	cp -v ${DIR}/deploy/gift_wrap_final_images.sh /mnt/farm/images/bb.org-${time}/gift_wrap_final_images.sh
+	chmod +x /mnt/farm/images/bb.org-${time}/gift_wrap_final_images.sh
 fi
 

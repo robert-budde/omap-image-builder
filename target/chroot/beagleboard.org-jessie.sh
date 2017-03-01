@@ -22,9 +22,8 @@
 
 export LC_ALL=C
 
-u_boot_release="v2016.03"
-u_boot_release_x15="v2015.07"
-#bone101_git_sha="50e01966e438ddc43b9177ad4e119e5274a0130d"
+u_boot_release="v2017.03-rc3"
+u_boot_release_x15="ti-2017.01"
 
 #contains: rfs_username, release_date
 if [ -f /etc/rcn-ee.conf ] ; then
@@ -109,6 +108,7 @@ setup_desktop () {
 		echo "        Identifier      \"Builtin Default fbdev Device 0\"" >> ${wfile}
 
 #		echo "        Driver          \"modesetting\"" >> ${wfile}
+#		echo "        Option          \"AccelMethod\"   \"none\"" >> ${wfile}
 		echo "        Driver          \"fbdev\"" >> ${wfile}
 
 		echo "#HWcursor_false        Option          \"HWcursor\"          \"false\"" >> ${wfile}
@@ -176,21 +176,6 @@ setup_desktop () {
 #		fi
 #	fi
 
-	#fix Ping:
-	#ping: icmp open socket: Operation not permitted
-	if [ -f /bin/ping ] ; then
-	    if command -v setcap > /dev/null; then
-		if setcap cap_net_raw+ep /bin/ping cap_net_raw+ep /bin/ping6; then
-		    echo "Setcap worked! Ping(6) is not suid!"
-		else
-		    echo "Setcap failed on /bin/ping, falling back to setuid" >&2
-		    chmod u+s /bin/ping /bin/ping6
-		fi
-	    else
-		echo "Setcap is not installed, falling back to setuid" >&2
-		chmod u+s /bin/ping /bin/ping6
-	    fi
-	fi
 }
 
 install_pip_pkgs () {
@@ -221,7 +206,7 @@ install_pip_pkgs () {
 }
 
 install_git_repos () {
-	if [ -f /usr/bin/jekyll ] ; then
+	if [ -d /usr/local/lib/node_modules/bonescript ] ; then
 		if [ -d /etc/apache2/ ] ; then
 			#bone101 takes over port 80, so shove apache/etc to 8080:
 			if [ -f /etc/apache2/ports.conf ] ; then
@@ -229,6 +214,9 @@ install_git_repos () {
 			fi
 			if [ -f /etc/apache2/sites-enabled/000-default ] ; then
 				sed -i -e 's:80:8080:g' /etc/apache2/sites-enabled/000-default
+			fi
+			if [ -f /etc/apache2/sites-enabled/000-default.conf ] ; then
+				sed -i -e 's:80:8080:g' /etc/apache2/sites-enabled/000-default.conf
 			fi
 			if [ -f /var/www/html/index.html ] ; then
 				rm -rf /var/www/html/index.html || true
@@ -278,17 +266,14 @@ install_git_repos () {
 		fi
 	fi
 
-	is_kernel=$(echo ${repo_rcnee_pkg_version} | grep 4.1. || true)
-	if [ ! "x${is_kernel}" = "x" ] ; then
-		git_branch="4.1-ti"
-	else
-		is_kernel=$(echo ${repo_rcnee_pkg_version} | grep 4.4. || true)
-		if [ ! "x${is_kernel}" = "x" ] ; then
-			git_branch="4.4-ti"
-		fi
-	fi
 	git_repo="https://github.com/RobertCNelson/dtb-rebuilder.git"
-	git_target_dir="/opt/source/dtb-${git_branch}"
+	git_target_dir="/opt/source/dtb-4.4-ti"
+	git_branch="4.4-ti"
+	git_clone_branch
+
+	git_repo="https://github.com/RobertCNelson/dtb-rebuilder.git"
+	git_target_dir="/opt/source/dtb-4.9-ti"
+	git_branch="4.9-ti"
 	git_clone_branch
 
 	git_repo="https://github.com/beagleboard/bb.org-overlays"
@@ -323,10 +308,9 @@ install_git_repos () {
 		fi
 	fi
 
-	#am335x-pru-package
-	if [ -f /usr/include/prussdrv.h ] ; then
-		git_repo="git://git.ti.com/pru-software-support-package/pru-software-support-package.git"
-		git_target_dir="/opt/source/pru-software-support-package"
+	if [ ! -f /usr/lib/libroboticscape.so ] ; then
+		git_repo="https://github.com/StrawsonDesign/Robotics_Cape_Installer"
+		git_target_dir="/opt/source/Robotics_Cape_Installer"
 		git_clone
 	fi
 
@@ -335,10 +319,15 @@ install_git_repos () {
 	git_target_dir="/opt/source/beagle-tester"
 	git_clone
 	if [ -f ${git_target_dir}/.git/config ] ; then
-		cd ${git_target_dir}/
-		if [ -f /usr/bin/make ] ; then
-			make
-			make install
+		if [ -f /usr/lib/libroboticscape.so ] ; then
+			cd ${git_target_dir}/
+			if [ -f /usr/bin/make ] ; then
+				make
+				make install || true
+#				if [ ! "x${image_type}" = "xtester-2gb" ] ; then
+#					systemctl disable beagle-tester.service || true
+#				fi
+			fi
 		fi
 	fi
 }
@@ -354,6 +343,7 @@ other_source_links () {
 	mkdir -p /opt/source/u-boot_${u_boot_release}/
 	wget --directory-prefix="/opt/source/u-boot_${u_boot_release}/" ${rcn_https}/${u_boot_release}/0001-omap3_beagle-uEnv.txt-bootz-n-fixes.patch
 	wget --directory-prefix="/opt/source/u-boot_${u_boot_release}/" ${rcn_https}/${u_boot_release}/0001-am335x_evm-uEnv.txt-bootz-n-fixes.patch
+	wget --directory-prefix="/opt/source/u-boot_${u_boot_release}/" ${rcn_https}/${u_boot_release}/0002-U-Boot-BeagleBone-Cape-Manager.patch
 	mkdir -p /opt/source/u-boot_${u_boot_release_x15}/
 	wget --directory-prefix="/opt/source/u-boot_${u_boot_release_x15}/" ${rcn_https}/${u_boot_release_x15}/0001-beagle_x15-uEnv.txt-bootz-n-fixes.patch
 
@@ -396,5 +386,5 @@ if [ -f /usr/bin/git ] ; then
 fi
 #install_build_pkgs
 other_source_links
-unsecure_root
+#unsecure_root
 #

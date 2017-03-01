@@ -107,9 +107,8 @@ setup_desktop () {
 		echo "Section \"Device\"" >> ${wfile}
 		echo "        Identifier      \"Builtin Default fbdev Device 0\"" >> ${wfile}
 
-#		echo "        Driver          \"modesetting\"" >> ${wfile}
-#		echo "        Option          \"AccelMethod\"   \"none\"" >> ${wfile}
-		echo "        Driver          \"fbdev\"" >> ${wfile}
+		echo "        Driver          \"modesetting\"" >> ${wfile}
+		echo "        Option          \"AccelMethod\"   \"none\"" >> ${wfile}
 
 		echo "#HWcursor_false        Option          \"HWcursor\"          \"false\"" >> ${wfile}
 
@@ -296,6 +295,18 @@ install_git_repos () {
 		fi
 	fi
 
+	git_repo="https://github.com/ungureanuvladvictor/BBBlfs"
+	git_target_dir="/opt/source/BBBlfs"
+	git_clone
+	if [ -f ${git_target_dir}/.git/config ] ; then
+		cd ${git_target_dir}/
+		if [ -f /usr/bin/make ] ; then
+			./autogen.sh
+			./configure
+			make
+		fi
+	fi
+
 	if [ ! -f /usr/lib/libroboticscape.so ] ; then
 		git_repo="https://github.com/StrawsonDesign/Robotics_Cape_Installer"
 		git_target_dir="/opt/source/Robotics_Cape_Installer"
@@ -312,9 +323,9 @@ install_git_repos () {
 			if [ -f /usr/bin/make ] ; then
 				make
 				make install || true
-				if [ ! "x${image_type}" = "xtester-2gb" ] ; then
-					systemctl disable beagle-tester.service || true
-				fi
+#				if [ ! "x${image_type}" = "xtester-2gb" ] ; then
+#					systemctl disable beagle-tester.service || true
+#				fi
 			fi
 		fi
 	fi
@@ -342,20 +353,21 @@ other_source_links () {
 }
 
 unsecure_root () {
-	root_password=$(cat /etc/shadow | grep root | awk -F ':' '{print $2}')
-	sed -i -e 's:'$root_password'::g' /etc/shadow
+#	root_password=$(cat /etc/shadow | grep root | awk -F ':' '{print $2}')
+#	sed -i -e 's:'$root_password'::g' /etc/shadow
 
-	if [ -f /etc/ssh/sshd_config ] ; then
-		#Make ssh root@beaglebone work..
-		sed -i -e 's:PermitEmptyPasswords no:PermitEmptyPasswords yes:g' /etc/ssh/sshd_config
-		sed -i -e 's:UsePAM yes:UsePAM no:g' /etc/ssh/sshd_config
-		#Starting with Jessie:
-		sed -i -e 's:PermitRootLogin without-password:PermitRootLogin yes:g' /etc/ssh/sshd_config
-	fi
+#	if [ -f /etc/ssh/sshd_config ] ; then
+#		#Make ssh root@beaglebone work..
+#		sed -i -e 's:PermitEmptyPasswords no:PermitEmptyPasswords yes:g' /etc/ssh/sshd_config
+#		sed -i -e 's:UsePAM yes:UsePAM no:g' /etc/ssh/sshd_config
+#		#Starting with Jessie:
+#		sed -i -e 's:PermitRootLogin without-password:PermitRootLogin yes:g' /etc/ssh/sshd_config
+#	fi
 
-	if [ -f /etc/sudoers ] ; then
+	if [ -d /etc/sudoers.d/ ] ; then
 		#Don't require password for sudo access
-		echo "${rfs_username}  ALL=NOPASSWD: ALL" >>/etc/sudoers
+		echo "${rfs_username} ALL=NOPASSWD: ALL" >/etc/sudoers.d/${rfs_username}
+		chmod 0440 /etc/sudoers.d/${rfs_username}
 	fi
 }
 
@@ -364,7 +376,7 @@ is_this_qemu
 setup_system
 setup_desktop
 
-#install_pip_pkgs
+install_pip_pkgs
 if [ -f /usr/bin/git ] ; then
 	git config --global user.email "${rfs_username}@example.com"
 	git config --global user.name "${rfs_username}"

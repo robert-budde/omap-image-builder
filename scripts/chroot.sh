@@ -73,6 +73,8 @@ check_defines () {
 	debian)
 		deb_components=${deb_components:-"main contrib non-free"}
 		deb_mirror=${deb_mirror:-"httpredir.debian.org/debian/"}
+		#Debian Stretch:
+		#deb_mirror=${deb_mirror:-"deb.debian.org/debian/"}
 		;;
 	ubuntu)
 		deb_components=${deb_components:-"main universe multiverse"}
@@ -123,14 +125,14 @@ check_defines () {
 	if [ "x${deb_additional_pkgs}" = "x" ] ; then
 		##Backwards compat pre configs
 		if [ ! "x${base_pkg_list}" = "x" ] ; then
-			deb_additional_pkgs="$(echo ${base_pkg_list} | sed 's/,/ /g')"
+			deb_additional_pkgs="$(echo ${base_pkg_list} | sed 's/,/ /g' | sed 's/\t/,/g')"
 		fi
 	else
-		deb_additional_pkgs="$(echo ${deb_additional_pkgs} | sed 's/,/ /g')"
+		deb_additional_pkgs="$(echo ${deb_additional_pkgs} | sed 's/,/ /g' | sed 's/\t/,/g')"
 	fi
 
 	if [ ! "x${deb_include}" = "x" ] ; then
-		include=$(echo ${deb_include} | sed 's/,/ /g')
+		include=$(echo ${deb_include} | sed 's/,/ /g' | sed 's/\t/,/g')
 		deb_additional_pkgs="${deb_additional_pkgs} ${include}"
 	fi
 
@@ -387,8 +389,8 @@ fi
 
 if [ ! "x${repo_nodesource}" = "x" ] ; then
 	echo "" >> ${wfile}
-	echo "deb https://deb.nodesource.com/${repo_nodesource} ${deb_codename} main" >> ${wfile}
-	echo "#deb-src https://deb.nodesource.com/${repo_nodesource} ${deb_codename} main" >> ${wfile}
+	echo "deb https://deb.nodesource.com/${repo_nodesource} ${repo_nodesource_dist} main" >> ${wfile}
+	echo "#deb-src https://deb.nodesource.com/${repo_nodesource} ${repo_nodesource_dist} main" >> ${wfile}
 	echo "" >> ${wfile}
 	sudo cp -v "${OIB_DIR}/target/keyring/nodesource.gpg.key" "${tempdir}/tmp/nodesource.gpg.key"
 fi
@@ -512,10 +514,12 @@ fi
 
 #Backward compatibility, as setup_sdcard.sh expects [lsb_release -si > /etc/rcn-ee.conf]
 echo "distro=${distro}" > /tmp/rcn-ee.conf
+echo "deb_codename=${deb_codename}" >> /tmp/rcn-ee.conf
 echo "rfs_username=${rfs_username}" >> /tmp/rcn-ee.conf
 echo "release_date=${time}" >> /tmp/rcn-ee.conf
 echo "third_party_modules=${third_party_modules}" >> /tmp/rcn-ee.conf
 echo "abi=${abi}" >> /tmp/rcn-ee.conf
+echo "image_type=${image_type}" >> /tmp/rcn-ee.conf
 sudo mv /tmp/rcn-ee.conf "${tempdir}/etc/rcn-ee.conf"
 sudo chown root:root "${tempdir}/etc/rcn-ee.conf"
 
@@ -570,6 +574,15 @@ cat > "${DIR}/chroot_script.sh" <<-__EOF__
 			dpkg-divert --local --rename --add /sbin/initctl
 			ln -s /bin/true /sbin/initctl
 		fi
+
+		apt_options="--force-yes"
+		if [ "x\${deb_codename}" = "xstretch" ] ; then
+			apt_options=""
+		fi
+		if [ "x\${deb_codename}" = "xxenial" ] ; then
+			apt_options="--allow-downgrades --allow-remove-essential --allow-change-held-packages"
+		fi
+		echo "Log: (chroot): apt using extra: [\${apt_options}]"
 	}
 
 	install_pkg_updates () {
@@ -591,7 +604,8 @@ cat > "${DIR}/chroot_script.sh" <<-__EOF__
 		fi
 
 		apt-get update
-		apt-get upgrade -y --force-yes
+		apt-get upgrade -y \${apt_options}
+		apt-get dist-upgrade -y \${apt_options}
 
 		if [ "x${chroot_very_small_image}" = "xenable" ] ; then
 			if [ -f /bin/busybox ] ; then
@@ -602,6 +616,12 @@ cat > "${DIR}/chroot_script.sh" <<-__EOF__
 				#conflicts with systemd reboot...
 				if [ -f /usr/local/bin/reboot ] ; then
 					rm -f /usr/local/bin/reboot
+				fi
+
+				#df: unrecognized option '--portability'
+				#BusyBox v1.22.1 (Debian 1:1.22.0-9+deb8u1) multi-call binary.
+				if [ -f /usr/local/bin/df ] ; then
+					rm -f /usr/local/bin/df
 				fi
 
 				#tar: unrecognized option '--warning=no-timestamp'
@@ -623,13 +643,17 @@ cat > "${DIR}/chroot_script.sh" <<-__EOF__
 		if [ ! "x${deb_additional_pkgs}" = "x" ] ; then
 			#Install the user choosen list.
 			echo "Log: (chroot) Installing: ${deb_additional_pkgs}"
-			apt-get -y --force-yes install ${deb_additional_pkgs}
+			apt-get update
+			apt-get -y \${apt_options} install ${deb_additional_pkgs}
 		fi
 
 		if [ ! "x${repo_rcnee_pkg_version}" = "x" ] ; then
 			echo "Log: (chroot) Installing modules for: ${repo_rcnee_pkg_version}"
-			apt-get -y --force-yes install mt7601u-modules-${repo_rcnee_pkg_version} || true
-			apt-get -y --force-yes install rtl8723bu-modules-${repo_rcnee_pkg_version} || true
+			apt-get -y \${apt_options} install mt7601u-modules-${repo_rcnee_pkg_version} || true
+			apt-get -y \${apt_options} install rtl8723bu-modules-${repo_rcnee_pkg_version} || true
+			apt-get -y \${apt_options} install ti-cmem-modules-${repo_rcnee_pkg_version} || true
+			apt-get -y \${apt_options} install ti-debugss-modules-${repo_rcnee_pkg_version} || true
+			apt-get -y \${apt_options} install ti-temperature-modules-${repo_rcnee_pkg_version} || true
 			depmod -a ${repo_rcnee_pkg_version}
 			update-initramfs -u -k ${repo_rcnee_pkg_version}
 		fi
@@ -637,13 +661,13 @@ cat > "${DIR}/chroot_script.sh" <<-__EOF__
 		if [ "x${chroot_enable_debian_backports}" = "xenable" ] ; then
 			if [ ! "x${chroot_debian_backports_pkg_list}" = "x" ] ; then
 				echo "Log: (chroot) Installing (from backports): ${chroot_debian_backports_pkg_list}"
-				sudo apt-get -y --force-yes -t ${deb_codename}-backports install ${chroot_debian_backports_pkg_list}
+				sudo apt-get -y \${apt_options} -t ${deb_codename}-backports install ${chroot_debian_backports_pkg_list}
 			fi
 		fi
 
 		if [ ! "x${repo_external_pkg_list}" = "x" ] ; then
 			echo "Log: (chroot) Installing (from external repo): ${repo_external_pkg_list}"
-			apt-get -y --force-yes install ${repo_external_pkg_list}
+			apt-get -y \${apt_options} install ${repo_external_pkg_list}
 		fi
 	}
 
@@ -690,7 +714,7 @@ cat > "${DIR}/chroot_script.sh" <<-__EOF__
 
 	run_deborphan () {
 		echo "Log: (chroot): deborphan is not reliable, run manual and add pkg list to: [chroot_manual_deborphan_list]"
-		apt-get -y --force-yes install deborphan
+		apt-get -y \${apt_options} install deborphan
 
 		# Prevent deborphan from removing explicitly required packages
 		deborphan -A ${deb_additional_pkgs} ${repo_external_pkg_list} ${deb_include}
@@ -795,8 +819,14 @@ cat > "${DIR}/chroot_script.sh" <<-__EOF__
 		dpkg_check
 
 		if [ "x\${pkg_is_not_installed}" = "x" ] ; then
-			echo "Log: (chroot) adding admin group to /etc/sudoers"
-			echo "%admin  ALL=(ALL) ALL" >>/etc/sudoers
+			if [ -f /etc/sudoers.d/README ] ; then
+				echo "Log: (chroot) adding admin group to /etc/sudoers.d/admin"
+				echo "%admin ALL=(ALL:ALL) ALL" >/etc/sudoers.d/admin
+				chmod 0440 /etc/sudoers.d/admin
+			else
+				echo "Log: (chroot) adding admin group to /etc/sudoers"
+				echo "%admin  ALL=(ALL) ALL" >>/etc/sudoers
+			fi
 		else
 			dpkg_package_missing
 			if [ "x${rfs_disable_root}" = "xenable" ] ; then
@@ -924,8 +954,18 @@ cat > "${DIR}/chroot_script.sh" <<-__EOF__
 
 			#Remove ntpdate
 			if [ -f /usr/sbin/ntpdate ] ; then
-				apt-get remove -y --force-yes ntpdate --purge || true
+				apt-get remove -y \${apt_options} ntpdate --purge || true
 			fi
+		fi
+
+		#kill systemd/connman-wait-online.service, as it delays serial console upto 2 minutes...
+		if [ -f /etc/systemd/system/network-online.target.wants/connman-wait-online.service ] ; then
+			systemctl disable connman-wait-online.service || true
+		fi
+
+		#We manually start dnsmasq, usb0/SoftAp0 are not available till late in boot...
+		if [ -f /lib/systemd/system/dnsmasq.service ] ; then
+			systemctl disable dnsmasq.service || true
 		fi
 	}
 
@@ -1137,11 +1177,11 @@ cat > "${DIR}/cleanup_script.sh" <<-__EOF__
 		apt-get clean
 		rm -rf /var/lib/apt/lists/*
 
+		if [ -d /var/cache/bb-node-red-installer ] ; then
+			rm -rf /var/cache/bb-node-red-installer|| true
+		fi
 		if [ -d /var/cache/c9-core-installer/ ] ; then
 			rm -rf /var/cache/c9-core-installer/ || true
-		fi
-		if [ -d /var/cache/ipumm-dra7xx-installer/ ] ; then
-			rm -rf /var/cache/ipumm-dra7xx-installer/ || true
 		fi
 		if [ -d /var/cache/ti-c6000-cgt-v8.0.x-installer/ ] ; then
 			rm -rf /var/cache/ti-c6000-cgt-v8.0.x-installer/ || true
@@ -1151,9 +1191,6 @@ cat > "${DIR}/cleanup_script.sh" <<-__EOF__
 		fi
 		if [ -d /var/cache/ti-pru-cgt-installer/ ] ; then
 			rm -rf /var/cache/ti-pru-cgt-installer/ || true
-		fi
-		if [ -d /var/cache/vpdma-dra7xx-installer/ ] ; then
-			rm -rf /var/cache/vpdma-dra7xx-installer/ || true
 		fi
 		rm -f /usr/sbin/policy-rc.d
 
@@ -1166,6 +1203,9 @@ cat > "${DIR}/cleanup_script.sh" <<-__EOF__
 #		if [ -d /run/ ] ; then
 #			rm -rf /run/* || true
 #		fi
+
+		# Clear out the /tmp directory
+		rm -rf /tmp/* || true
 	}
 
 	cleanup

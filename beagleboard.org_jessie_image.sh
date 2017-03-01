@@ -7,9 +7,9 @@ DIR="$PWD"
 ./RootStock-NG.sh -c bb.org-debian-jessie-lxqt-4gb-v4.1
 ./RootStock-NG.sh -c bb.org-debian-jessie-console-v4.1
 
-debian_jessie_lxqt_2gb="debian-8.4-lxqt-2gb-armhf-${time}"
-debian_jessie_lxqt_4gb="debian-8.4-lxqt-4gb-armhf-${time}"
-debian_jessie_console="debian-8.4-console-armhf-${time}"
+debian_jessie_lxqt_2gb="debian-8.7-lxqt-2gb-armhf-${time}"
+debian_jessie_lxqt_4gb="debian-8.7-lxqt-4gb-armhf-${time}"
+ debian_jessie_console="debian-8.7-console-armhf-${time}"
 
 archive="xz -z -8 -v"
 
@@ -23,9 +23,6 @@ beaglebone_console="--dtb beaglebone --bbb-old-bootloader-in-emmc \
 
 bb_blank_flasher_console="--dtb bbb-blank-eeprom --bbb-old-bootloader-in-emmc \
 --hostname beaglebone"
-
-arduino_tre="--dtb am335x-arduino-tre --boot_label ARDUINO-TRE \
---rootfs_label rootfs --hostname arduino-tre"
 
 omap3_beagle_xm="--dtb omap3-beagle-xm --hostname BeagleBoard"
 omap5_uevm="--dtb omap5-uevm --hostname omap5-uevm"
