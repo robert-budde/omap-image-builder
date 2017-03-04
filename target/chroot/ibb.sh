@@ -159,7 +159,7 @@ install_knxd () {
 	# now build+install knxd itself
 	git_repo="https://github.com/knxd/knxd.git"
 	git_target_dir="knxd"
-	git_branch="stable"
+	git_branch="v0.12"
 	git_clone_branch
 	cd knxd
 	dpkg-buildpackage -b -uc
@@ -170,7 +170,7 @@ install_knxd () {
 	rm -rf knxd* || true
 
 	# customize systemd config
-	sed -i -e 's:KNXD_OPTS=\".*\":KNXD_OPTS=\"-e 0.0.1 -E 0.0.2:8 --GroupCache -D -R -T -S --tpuarts-ack-all-group --tpuarts-ack-all-individual --layer2=tpuarts\:/dev/ttyS2\":g' /etc/knxd.conf
+	sed -i -e 's;KNXD_OPTS=".*";KNXD_OPTS="-e 0.0.1 -E 0.0.2:8 --GroupCache -D -R -T -S --tpuarts-ack-all-group --tpuarts-ack-all-individual --layer2=tpuarts:/dev/ttyS2";g' /etc/knxd.conf
 
 	# add knxd to dialout group to allow access to tty
 	usermod -a -G dialout knxd
