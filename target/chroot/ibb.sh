@@ -180,18 +180,13 @@ install_smarthomeNG_develop () {
 	echo "Cloning smarthomeNG git repository (branch: develop)"
 	mkdir -p /usr/local
 	cd /usr/local
-	git_repo="https://github.com/smarthomeNG/smarthome.git"
-	git_target_dir="smarthome"
-	git_branch="release-1.3"
-	git_clone_branch
-
-	echo "Setting ownership for smarthomeNG"
-	chown -R smarthome:smarthome smarthome
+	sudo git clone --recursive -b release-1.3 git://github.com/smarthomeNG/smarthome.git
 
 	echo "Configuring smarthomeNG"
-	cd smarthome/etc
-	touch logic.conf
-	cat > smarthome.conf <<- 'EOF'
+
+	touch smarthome/etc/logic.conf
+
+	cat > smarthome/etc/smarthome.conf <<- 'EOF'
 		# smarthome.conf
 		lat = 51.514167
 		lon = 7.433889
@@ -199,7 +194,7 @@ install_smarthomeNG_develop () {
 		tz = 'Europe/Berlin'
 	EOF
 
-	cat > plugin.conf <<- 'EOF'
+	cat > smarthome/etc/plugin.conf <<- 'EOF'
 		# plugin.conf
 		[knx]
 		    class_name = KNX
@@ -243,6 +238,9 @@ install_smarthomeNG_develop () {
 		#    reset_baudrate = False
 		#    no_waiting = True
 	EOF
+
+	echo "Setting ownership for smarthomeNG"
+	chown -R smarthome:smarthome smarthome
 
 	echo "Installing smarthomeNG systemd service"
 	mkdir -p /etc/systemd/system
