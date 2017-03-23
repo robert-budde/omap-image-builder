@@ -50,8 +50,9 @@ xz_img="xz -z -8"
 #xz_tar="xz -z -8"
 xz_tar="xz -T0 -z -8"
 
-beaglebone="--dtb beaglebone --bbb-old-bootloader-in-emmc \
---rootfs_label rootfs --hostname beaglebone --enable-cape-universal"
+beaglebone="--dtb beaglebone --rootfs_label rootfs --hostname beaglebone --enable-cape-universal"
+
+overlay="--enable-uboot-cape-overlays"
 
 beagle_xm="--dtb omap3-beagle-xm --rootfs_label rootfs --hostname beagleboard"
 
@@ -162,11 +163,13 @@ options="--img-4gb bone-\${base_rootfs} ${beaglebone}" ; generate_img
 base_rootfs="${debian_jessie_console}" ; blend="console" ; extract_base_rootfs
 
 options="--img-2gb a335-eeprom-\${base_rootfs} ${beaglebone}  --a335-flasher" ; generate_img
+options="--img-2gb bp00-eeprom-\${base_rootfs} ${beaglebone}  --bp00-flasher" ; generate_img
 options="--img-2gb bone-\${base_rootfs}        ${beaglebone}"                 ; generate_img
 options="--img-2gb bbx15-\${base_rootfs}       ${beagle_x15}"                 ; generate_img
+options="--img-2gb me06-blank-\${base_rootfs}  ${beaglebone}  --me06-flasher" ; generate_img
 
 #options="--img-2gb BBB-blank-\${base_rootfs}   ${beaglebone}  --emmc-flasher" ; generate_img
-#options="--img-2gb bbx15-blank-\${base_rootfs} ${beagle_x15}  --emmc-flasher" ; generate_img
+#options="--img-2gb bbx15-blank-\${base_rootfs} ${beagle_x15}  --emmc-flasher"        ; generate_img
 
 ###iot image (jessie):
 base_rootfs="${debian_jessie_iot}" ; blend="iot" ; extract_base_rootfs
@@ -191,6 +194,7 @@ options="--img-4gb bone-\${base_rootfs}        ${beaglebone}"                 ; 
 options="--img-4gb bbx15-\${base_rootfs}       ${beagle_x15}"                 ; generate_img
 options="--img-4gb BBB-blank-\${base_rootfs}   ${beaglebone}  --emmc-flasher" ; generate_img
 options="--img-4gb BBBW-blank-\${base_rootfs}  ${beaglebone}  --bbbw-flasher" ; generate_img
+options="--img-4gb BBB-blank-uboot-overlay-\${base_rootfs}  ${beaglebone} --emmc-flasher ${overlay}" ; generate_img
 
 #options="--img-4gb m10a-blank-\${base_rootfs}  ${beaglebone}  --m10a-flasher" ; generate_img
 #options="--img-4gb bbx15-blank-\${base_rootfs} ${beagle_x15}  --emmc-flasher" ; generate_img
@@ -215,13 +219,13 @@ options="--img-4gb bone-\${base_rootfs}      ${beaglebone}"                ; gen
 ###iot image (stretch):
 base_rootfs="${debian_stretch_iot}" ; blend="stretch-iot" ; extract_base_rootfs
 
-options="--img-4gb bone-\${base_rootfs}       ${beaglebone} --enable-uboot-cape-overlays"                 ; generate_img
+options="--img-4gb bone-\${base_rootfs}       ${beaglebone} ${overlay}"      ; generate_img
 options="--img-4gb bbx15-\${base_rootfs}      ${beagle_x15}"                 ; generate_img
 
 ### wayland image (stretch):
 base_rootfs="${debian_stretch_wayland}" ; blend="stretch-wayland" ; extract_base_rootfs
 
-options="--img-4gb bone-\${base_rootfs}       ${beaglebone} --enable-uboot-cape-overlays"                 ; generate_img
+options="--img-4gb bone-\${base_rootfs}       ${beaglebone} ${overlay}"      ; generate_img
 options="--img-4gb bbx15-\${base_rootfs}      ${beagle_x15}"                 ; generate_img
 
 ###archive *.tar
@@ -253,8 +257,10 @@ wfile="bone-\${base_rootfs}-4gb" ; archive_img
 base_rootfs="${debian_jessie_console}" ; blend="console"
 
 wfile="a335-eeprom-\${base_rootfs}-2gb" ; archive_img
+wfile="bp00-eeprom-\${base_rootfs}-2gb" ; archive_img
 wfile="bone-\${base_rootfs}-2gb"        ; archive_img
 wfile="bbx15-\${base_rootfs}-2gb"       ; archive_img
+wfile="me06-blank-\${base_rootfs}-2gb"  ; archive_img
 
 #wfile="BBB-blank-\${base_rootfs}-2gb"   ; archive_img
 #wfile="bbx15-blank-\${base_rootfs}-2gb" ; archive_img
@@ -282,6 +288,7 @@ wfile="bone-\${base_rootfs}-4gb"        ; archive_img
 wfile="bbx15-\${base_rootfs}-4gb"       ; archive_img
 wfile="BBB-blank-\${base_rootfs}-4gb"   ; archive_img
 wfile="BBBW-blank-\${base_rootfs}-4gb"  ; archive_img
+wfile="BBB-blank-uboot-overlay-\${base_rootfs}-4gb"  ; archive_img
 
 #wfile="m10a-blank-\${base_rootfs}-4gb"  ; archive_img
 #wfile="bbx15-blank-\${base_rootfs}-4gb" ; archive_img
