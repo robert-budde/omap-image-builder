@@ -269,8 +269,7 @@ install_smartvisu () {
 
 	git_repo="https://github.com/Martin-Gleiss/smartvisu.git"
 	git_target_dir="smartVISU"
-	git_branch="develop"
-	git_clone_branch
+	git_clone
 
 	echo "Setting ownership for smartVISU"
 	chown -R www-data:www-data smartVISU
